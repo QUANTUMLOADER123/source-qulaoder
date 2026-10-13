@@ -53,7 +53,7 @@ local aim = aimbot:Groupbox("Aimbot")
 
 aim:Toggle({ Title = "Enable", Flag = "aim_enabled" })
 aim:Dropdown({ Title = "Hitboxes", Options = { "Head", "Chest", "Stomach" }, Multi = true, Default = { "Head", "Chest", "Stomach" }, Flag = "aim_hitboxes" })
-aim:Dropdown({ Title = "Ignore jump", Options = { "Yes", "No" }, Placeholder = "", Flag = "aim_ignore_jump" })
+aim:Dropdown({ Title = "Ignore jump", Options = { "Yes", "No" }, Placeholder = "", Dim = true, Flag = "aim_ignore_jump" })
 aim:Dropdown({ Title = "Fov type", Options = { "Dynamic", "Static" }, Default = "Dynamic", Dim = true, Flag = "aim_fov_type" })
 aim:Dropdown({ Title = "Smooth type", Options = { "Decrease", "Increase" }, Default = "Decrease", Dim = true, Flag = "aim_smooth_type" })
 aim:Slider({ Title = "Auto-fire hitchance", Min = 0, Max = 100, Default = 0, Flag = "aim_hitchance" })
