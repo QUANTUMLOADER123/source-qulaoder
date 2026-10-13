@@ -2,79 +2,71 @@
 local Mock = require(script.Parent.MockRoblox)
 Mock.install()
 local Midnight = require(script.Parent.Parent.src.init)
-local window = Midnight:CreateWindow({ Parent = Mock.services.Players.LocalPlayer:WaitForChild("PlayerGui") })
-local box = window:Tab("Features"):Page("Self", { Group = "Main" }):Groupbox("Test")
+local window = Midnight:CreateWindow({ Parent = Mock.services.Players.LocalPlayer:WaitForChild("PlayerGui"), Size = { 1120, 700 } })
 
--- 1. dropdown
-local dd = box:Dropdown({ Title = "Method", Options = { "Local", "Server" }, Default = "Local", Flag = "dd" })
-warn("dd.Multi=" .. tostring(dd.Multi) .. " value=" .. tostring(dd:GetValue()))
-dd:Open()
-Mock.flush()
-local target = nil
-for _, child in dd._popup.Inner:GetDescendants() do
-	if child.ClassName == "TextButton" and child.Name == "Server" then target = child end
-end
-warn("found option: " .. tostring(target ~= nil) .. " handlers=" .. tostring(target ~= nil and target:__signal("MouseButton1Click"):GetHandlerCount() or -1))
-if target ~= nil then
-	Mock.fire(target, "MouseButton1Click")
-	Mock.flush(6)
-	warn("after click: value=" .. tostring(dd:GetValue()) .. " typeof=" .. typeof(dd:GetValue()) .. " dd.Multi now=" .. tostring(dd.Multi))
-end
+local page = window:Tab("GLOBALS"):Page("Aimbot", { Group = "Combat", Icon = "crosshair" })
+local a = page:Groupbox("Weapon")
+a:Dropdown({ Options = { "AWP", "AK-47" }, Default = "AWP", Flag = "g1" })
+local b = page:Groupbox("Aimbot")
+b:Toggle({ Title = "Enable", Flag = "g2" })
+b:Dropdown({ Title = "Hitboxes", Options = { "Head", "Chest" }, Default = "Head", Flag = "g3" })
+b:Slider({ Title = "Auto-fire hitchance", Min = 0, Max = 100, Flag = "g4" })
+local c = page:Groupbox("Settings")
+c:Slider({ Title = "FOV", Min = 0, Max = 10, Step = 0.1, Default = 2.3, Decimals = 1, Flag = "g5" })
 
--- 2. numeric textbox
-local num = box:Textbox({ Title = "Amount", Numeric = true, Min = 0, Max = 100, Default = 25 })
-warn("numeric default: " .. tostring(num:GetValue()))
-num.Input.Text = "250"
-num.Input:ReleaseFocus()
-Mock.flush()
-warn("numeric after 250: " .. tostring(num:GetValue()) .. " Input.Text=" .. tostring(num.Input.Text))
-
--- 3. slider
-local sl = box:Slider({ Title = "Time", Min = 0, Max = 1000, Default = 0 })
 Mock.layout()
-local area = sl._trackArea
-local layout = Mock.computeLayout(area)
-warn(("track: x=%s y=%s w=%s h=%s"):format(layout.AbsolutePosition.X, layout.AbsolutePosition.Y, layout.AbsoluteSize.X, layout.AbsoluteSize.Y))
-local clickX = layout.AbsolutePosition.X + layout.AbsoluteSize.X * 0.25
-Mock.inputBegan({ UserInputType = Enum.UserInputType.MouseButton1, Position = Vector3.new(clickX, layout.AbsolutePosition.Y + 5, 0) })
-Mock.flush()
-warn("slider after 25% click: " .. tostring(sl:GetValue()))
 
--- 4. colour picker
-local cp = box:ColorPicker({ Title = "Colour", Flag = "cp" })
-cp:Open()
-Mock.flush()
-local sv = nil
-for _, child in cp._popup.Inner:GetChildren() do
-	if child.Name == "SaturationValue" then sv = child end
-end
-warn("sv found: " .. tostring(sv ~= nil))
-if sv ~= nil then
-	Mock.layout()
-	local l = Mock.computeLayout(sv)
-	warn(("sv: x=%s y=%s w=%s h=%s"):format(l.AbsolutePosition.X, l.AbsolutePosition.Y, l.AbsoluteSize.X, l.AbsoluteSize.Y))
-	Mock.inputBegan({ UserInputType = Enum.UserInputType.MouseButton1, Position = Vector3.new(l.AbsolutePosition.X + l.AbsoluteSize.X - 2, l.AbsolutePosition.Y + 2, 0) })
-	Mock.flush()
-	local c = cp:GetValue()
-	local h, s, v = Color3.toHSV(c)
-	warn(("picker after corner click: h=%s s=%s v=%s"):format(h, s, v))
-	Mock.inputEnded({ UserInputType = Enum.UserInputType.MouseButton1, Position = Vector3.new(0, 0, 0) })
-	cp:Close()
-	Mock.flush(6)
+local sections = {}
+
+for _, s in page.Sections do
+	table.insert(sections, s)
 end
 
--- 5. notify
-local okNotify, errNotify = pcall(function()
-	return window:Notify({ Title = "Hi", Text = "there", Duration = 2 })
-end)
-warn("notify: " .. tostring(okNotify) .. " " .. tostring(errNotify))
+warn("sections: " .. tostring(#sections))
 
--- 6. theme partial
-window:SetTheme({ Colors = { Accent = Color3.fromRGB(255, 100, 100) } })
-warn("theme name=" .. tostring(window.Theme.Name) .. " accent=" .. tostring(window.Theme.Colors.Accent.R) .. "," .. tostring(window.Theme.Colors.Accent.G) .. "," .. tostring(window.Theme.Colors.Accent.B))
+local boxes = {}
 
--- 7. paragraph
-local para = box:Paragraph({ Text = "hello", Height = 30 })
-warn("paragraph height=" .. tostring(para.Height) .. " text=" .. tostring(para.Text))
+for _, s in sections do
+	local l = Mock.computeLayout(s.Instance)
+	table.insert(boxes, { name = s.Name, x = l.AbsolutePosition.X, y = l.AbsolutePosition.Y, w = l.AbsoluteSize.X, h = l.AbsoluteSize.Y })
+	warn(("  %-10s x=%.0f y=%.0f w=%.0f h=%.0f"):format(s.Name, l.AbsolutePosition.X, l.AbsolutePosition.Y, l.AbsoluteSize.X, l.AbsoluteSize.Y))
+end
 
+local overlaps = 0
+
+for i = 1, #boxes do
+	for j = i + 1, #boxes do
+		local a1, b1 = boxes[i], boxes[j]
+		local separated = a1.x + a1.w <= b1.x + 0.5 or b1.x + b1.w <= a1.x + 0.5
+			or a1.y + a1.h <= b1.y + 0.5 or b1.y + b1.h <= a1.y + 0.5
+
+		if not separated then
+			overlaps += 1
+			warn(("OVERLAP %s <-> %s"):format(a1.name, b1.name))
+		end
+	end
+end
+
+warn("panel overlaps: " .. tostring(overlaps))
+
+-- элементы внутри панели не должны пересекаться
+for _, s in sections do
+	local items = {}
+
+	for _, e in s:GetElements() do
+		local l = Mock.computeLayout(e.Instance)
+		table.insert(items, { y = l.AbsolutePosition.Y, h = l.AbsoluteSize.Y, title = tostring(e.Title or e.Class) })
+	end
+
+	table.sort(items, function(p1, p2) return p1.y < p2.y end)
+
+	for index = 2, #items do
+		if items[index].y < items[index - 1].y + items[index - 1].h - 0.5 then
+			overlaps += 1
+			warn(("ELEMENT OVERLAP in %s: %s / %s"):format(s.Name, items[index - 1].title, items[index].title))
+		end
+	end
+end
+
+warn("total overlaps: " .. tostring(overlaps))
 return nil

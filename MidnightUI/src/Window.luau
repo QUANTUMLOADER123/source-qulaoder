@@ -370,16 +370,10 @@ function Window.new(config: Config): Window
 
 	self.TabBar = tabBar
 
-	local divider = Instance.new("Frame")
 
-	divider.Name = "HeaderDivider"
-	divider.AnchorPoint = Vector2.new(0, 1)
-	divider.BackgroundColor3 = theme.Colors.Divider
-	divider.BorderSizePixel = 0
-	divider.Position = UDim2.new(0, 0, 0, headerHeight)
-	divider.Size = UDim2.new(1, 0, 0, 1)
-	divider.ZIndex = 6
-	divider.Parent = header
+	-- No full-width header rule: on the reference the logo, the tab strip and
+	-- the header buttons sit on one seamless row (only the active tab is
+	-- underlined).
 
 	--// Header buttons (search / settings) ------------------------------------
 	local buttonsRight = 24
@@ -800,7 +794,20 @@ function Window._selectTab(self: Window, tab: any)
 	if targetPage ~= nil then
 		self:_selectPage(targetPage)
 	elseif self.ActivePage == nil then
-		self:_getDefaultPageFor(tab)
+		-- A fresh tab has no pages yet. Creating the fallback "Main" page
+		-- immediately would leave a stray sidebar entry even when the user
+		-- adds real pages right after, so wait a frame first.
+		task.defer(function()
+			if tab.Pages ~= nil and #tab.Pages == 0 and not self._destroyed then
+				self:_getDefaultPageFor(tab)
+			elseif self.ActiveTab == tab and self.ActivePage == nil then
+				local first = tab.Pages[1]
+
+				if first ~= nil then
+					self:_selectPage(first)
+				end
+			end
+		end)
 	end
 end
 
@@ -897,9 +904,9 @@ function Window._rebuildSidebar(self: Window)
 			groupLabel.BackgroundTransparency = 1
 			groupLabel.LayoutOrder = order
 			groupLabel.Size = UDim2.new(1, -metrics.Padding, 0, metrics.GroupHeight)
-			groupLabel.Text = (page.Group or ""):upper()
+			groupLabel.Text = page.Group or ""
 			groupLabel.TextColor3 = theme.Colors.SidebarGroup
-			groupLabel.TextSize = 10
+			groupLabel.TextSize = 11
 			groupLabel.TextXAlignment = Enum.TextXAlignment.Left
 			groupLabel.TextYAlignment = Enum.TextYAlignment.Bottom
 			groupLabel.ZIndex = 6

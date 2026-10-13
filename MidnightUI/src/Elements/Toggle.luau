@@ -20,6 +20,7 @@ Toggle.__index = Toggle
 Toggle.Name = "Toggle"
 
 export type Props = {
+	Circle: boolean?,
 	Title: string?,
 	Default: boolean?,
 	Flag: string?,
@@ -49,6 +50,7 @@ function Toggle.new(section: any, props: Props?): any
 		Order = options.Order,
 	})
 
+	local circle = options.Circle == true
 	local boxSize = options.BoxSize or metrics.ToggleSize
 
 	self.Height = math.max(metrics.ToggleHeight, boxSize)
@@ -66,7 +68,7 @@ function Toggle.new(section: any, props: Props?): any
 	box.ZIndex = 2
 	box.Parent = self.Instance
 
-	Util.addCorner(box, metrics.ToggleRadius)
+	Util.addCorner(box, circle and boxSize / 2 or metrics.ToggleRadius)
 
 	local boxStroke = Util.addStroke(box, theme.Colors.ToggleOffBorder, 1)
 
@@ -89,6 +91,34 @@ function Toggle.new(section: any, props: Props?): any
 
 	checkScale.Scale = self.Value and 1 or 0
 	checkScale.Parent = check
+
+	-- Circle style: a solid dot instead of the tick glyph.
+	local dot = nil
+
+	if circle then
+		check.Visible = false
+
+		dot = Instance.new("Frame")
+
+		dot.Name = "Dot"
+		dot.AnchorPoint = Vector2.new(0.5, 0.5)
+		dot.BackgroundColor3 = theme.Colors.ToggleCheck
+		dot.BorderSizePixel = 0
+		dot.Position = UDim2.fromScale(0.5, 0.5)
+		dot.Size = UDim2.fromOffset(math.max(4, math.floor(boxSize * 0.42)), math.max(4, math.floor(boxSize * 0.42)))
+		dot.ZIndex = 3
+		dot.Parent = box
+
+		Util.addCorner(dot, math.huge)
+
+		local dotScale = Instance.new("UIScale")
+
+		dotScale.Scale = self.Value and 1 or 0
+		dotScale.Parent = dot
+
+		self._dotScale = dotScale
+		self.Dot = dot
+	end
 
 	--// Label ---------------------------------------------------------
 	local labelOffset = boxSize + metrics.Gap
@@ -149,14 +179,25 @@ function Toggle.new(section: any, props: Props?): any
 
 	function self.ValueChanged(value: any, animated: boolean?)
 		local on = value == true
+		local dotScale = self._dotScale
 
 		if animated == false then
 			checkScale.Scale = on and 1 or 0
+
+			if dotScale ~= nil then
+				dotScale.Scale = on and 1 or 0
+			end
 		else
 			Util.tween(checkScale, { Scale = on and 1 or 0 }, theme, {
 				Duration = theme.Animation.Normal,
 				Style = on and theme.Animation.EasingBounce or theme.Animation.EasingIn,
 			})
+
+			if dotScale ~= nil then
+				Util.tween(dotScale, { Scale = on and 1 or 0 }, theme, {
+					Duration = theme.Animation.Fast,
+				})
+			end
 		end
 
 		self:Refresh()

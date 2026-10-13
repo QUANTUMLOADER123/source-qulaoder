@@ -1339,6 +1339,7 @@ function Dropdown.new(section: any, props: Props?): any
 	self.Multi = multi
 	self.Search = options.Search == true
 	self.Arrow = options.Arrow == true
+	self.Dim = options.Dim == true
 	self.Placeholder = options.Placeholder or "Select…"
 	self.MaxHeight = options.MaxHeight or popupMetrics.MaxHeight
 	self.Display = options.Display
@@ -1501,15 +1502,21 @@ function Dropdown.new(section: any, props: Props?): any
 		valueText.TextColor3 = if disabled
 			then theme.Colors.TextDisabled
 			elseif isEmpty then theme.Colors.TextMuted
+			elseif self.Dim == true then theme.Colors.TextDim
 			else theme.Colors.Text
 
-		box.BackgroundColor3 = if disabled
-			then theme.Colors.Element
-			elseif self._open then theme.Colors.ElementActive
-			elseif self._hovering then theme.Colors.ElementHover
-			else theme.Colors.Element
+		local dim = self.Dim == true
+		local baseColor = if dim then theme.Colors.ElementDim else theme.Colors.Element
 
-		boxStroke.Color = if self._open or self._hovering then theme.Colors.Accent else theme.Colors.ElementBorder
+		box.BackgroundColor3 = if disabled
+			then baseColor
+			elseif self._open then theme.Colors.ElementActive
+			elseif self._hovering then (if dim then theme.Colors.ElementDimBorder else theme.Colors.ElementHover)
+			else baseColor
+
+		boxStroke.Color = if self._open or self._hovering
+			then theme.Colors.Accent
+			else (if dim then theme.Colors.ElementDimBorder else theme.Colors.ElementBorder)
 		boxStroke.Transparency = if disabled then 0.5 else 0
 
 		label.TextColor3 = if disabled then theme.Colors.TextDisabled else theme.Colors.Text
@@ -3105,6 +3112,7 @@ Toggle.__index = Toggle
 Toggle.Name = "Toggle"
 
 export type Props = {
+	Circle: boolean?,
 	Title: string?,
 	Default: boolean?,
 	Flag: string?,
@@ -3134,6 +3142,7 @@ function Toggle.new(section: any, props: Props?): any
 		Order = options.Order,
 	})
 
+	local circle = options.Circle == true
 	local boxSize = options.BoxSize or metrics.ToggleSize
 
 	self.Height = math.max(metrics.ToggleHeight, boxSize)
@@ -3151,7 +3160,7 @@ function Toggle.new(section: any, props: Props?): any
 	box.ZIndex = 2
 	box.Parent = self.Instance
 
-	Util.addCorner(box, metrics.ToggleRadius)
+	Util.addCorner(box, circle and boxSize / 2 or metrics.ToggleRadius)
 
 	local boxStroke = Util.addStroke(box, theme.Colors.ToggleOffBorder, 1)
 
@@ -3174,6 +3183,34 @@ function Toggle.new(section: any, props: Props?): any
 
 	checkScale.Scale = self.Value and 1 or 0
 	checkScale.Parent = check
+
+	-- Circle style: a solid dot instead of the tick glyph.
+	local dot = nil
+
+	if circle then
+		check.Visible = false
+
+		dot = Instance.new("Frame")
+
+		dot.Name = "Dot"
+		dot.AnchorPoint = Vector2.new(0.5, 0.5)
+		dot.BackgroundColor3 = theme.Colors.ToggleCheck
+		dot.BorderSizePixel = 0
+		dot.Position = UDim2.fromScale(0.5, 0.5)
+		dot.Size = UDim2.fromOffset(math.max(4, math.floor(boxSize * 0.42)), math.max(4, math.floor(boxSize * 0.42)))
+		dot.ZIndex = 3
+		dot.Parent = box
+
+		Util.addCorner(dot, math.huge)
+
+		local dotScale = Instance.new("UIScale")
+
+		dotScale.Scale = self.Value and 1 or 0
+		dotScale.Parent = dot
+
+		self._dotScale = dotScale
+		self.Dot = dot
+	end
 
 	--// Label ---------------------------------------------------------
 	local labelOffset = boxSize + metrics.Gap
@@ -3234,14 +3271,25 @@ function Toggle.new(section: any, props: Props?): any
 
 	function self.ValueChanged(value: any, animated: boolean?)
 		local on = value == true
+		local dotScale = self._dotScale
 
 		if animated == false then
 			checkScale.Scale = on and 1 or 0
+
+			if dotScale ~= nil then
+				dotScale.Scale = on and 1 or 0
+			end
 		else
 			Util.tween(checkScale, { Scale = on and 1 or 0 }, theme, {
 				Duration = theme.Animation.Normal,
 				Style = on and theme.Animation.EasingBounce or theme.Animation.EasingIn,
 			})
+
+			if dotScale ~= nil then
+				Util.tween(dotScale, { Scale = on and 1 or 0 }, theme, {
+					Duration = theme.Animation.Fast,
+				})
+			end
 		end
 
 		self:Refresh()
@@ -4188,6 +4236,7 @@ function Notification.new(window: any, props: Props, layout: (() -> ())?, onClos
 	self.Height = height
 
 	self.Root = root
+	self._closed = false
 	self.Accent = accent
 	self.Title = title
 	self.Text = body
@@ -4212,9 +4261,11 @@ function Notification.new(window: any, props: Props, layout: (() -> ())?, onClos
 	self._maid:Add(progressTween)
 
 	if self.Duration > 0 then
-		self._maid:Add(task.delay(self.Duration, function()
-			self:Close()
-		end))
+		task.delay(self.Duration, function()
+			if not self._closed then
+				self:Close()
+			end
+		end)
 	end
 
 	--// Click to dismiss -------------------------------------------------------
@@ -4237,6 +4288,7 @@ function Notification.Close(self: Notification)
 	end
 
 	self.Closing = true
+	self._closed = true
 
 	local theme = self.Theme
 	local metrics = theme.Metrics.Notification
@@ -5059,6 +5111,8 @@ export type Options = {
 	Collapsed: boolean?,
 	Description: string?,
 	Collapsible: boolean?,
+	Chevron: boolean?,
+	Divider: boolean?,
 	Order: number?,
 }
 
@@ -5108,6 +5162,7 @@ function Section.new(page: any, name: string, options: Options?): Section
 	self._animating = false
 	self._elementOrder = 0
 	self._appearOffset = 0
+	self._width = nil
 
 	--// Panel ---------------------------------------------------------
 	local panel = Instance.new("Frame")
@@ -5170,29 +5225,36 @@ function Section.new(page: any, name: string, options: Options?): Section
 	self.Header = header
 	self.Title = title
 
-	local chevron = Icon.create("chevronDown", {
-		Size = 14,
-		Color = theme.Colors.TextMuted,
-		Parent = header,
-		Position = UDim2.new(1, -(headerPadding + 14), 0, (metrics.Panel.HeaderHeight - 14) / 2),
-		AnchorPoint = Vector2.new(0, 0),
-		Name = "Chevron",
-		ZIndex = 4,
-	})
+	-- Chevron is opt-in: the reference groupbox headers are plain text.
+	local chevron = nil
 
-	chevron.Rotation = self.Collapsed and -90 or 0
+	if opts.Chevron == true then
+		chevron = Icon.create("chevronDown", {
+			Size = 14,
+			Color = theme.Colors.TextMuted,
+			Parent = header,
+			Position = UDim2.new(1, -(headerPadding + 14), 0, (metrics.Panel.HeaderHeight - 14) / 2),
+			AnchorPoint = Vector2.new(0, 0),
+			Name = "Chevron",
+			ZIndex = 4,
+		})
 
-	--// Divider -------------------------------------------------------
-	local divider = Instance.new("Frame")
+		chevron.Rotation = self.Collapsed and -90 or 0
+	end
 
-	divider.Name = "Divider"
-	divider.AnchorPoint = Vector2.new(0.5, 0)
-	divider.BackgroundColor3 = theme.Colors.PanelDivider
-	divider.BorderSizePixel = 0
-	divider.Position = UDim2.new(0.5, 0, 0, metrics.Panel.HeaderHeight - 1)
-	divider.Size = UDim2.new(1, -headerPadding * 2, 0, 1)
-	divider.ZIndex = 3
-	divider.Parent = panel
+	--// Divider (opt-in, the reference header is plain text) -----------
+	if opts.Divider == true then
+		local divider = Instance.new("Frame")
+
+		divider.Name = "Divider"
+		divider.AnchorPoint = Vector2.new(0.5, 0)
+		divider.BackgroundColor3 = theme.Colors.PanelDivider
+		divider.BorderSizePixel = 0
+		divider.Position = UDim2.new(0.5, 0, 0, metrics.Panel.HeaderHeight - 1)
+		divider.Size = UDim2.new(1, -headerPadding * 2, 0, 1)
+		divider.ZIndex = 3
+		divider.Parent = panel
+	end
 
 	--// Content -------------------------------------------------------
 	local content = Instance.new("CanvasGroup")
@@ -5260,6 +5322,15 @@ function Section.Appear(self: Section, delay: number?, instant: boolean?)
 	})
 end
 
+--- Applies the panel size, preserving an explicitly assigned column width.
+function Section._applySize(self: Section)
+	if self._width ~= nil then
+		self.Instance.Size = UDim2.new(0, self._width, 0, self.Height)
+	else
+		self.Instance.Size = UDim2.new(1, 0, 0, self.Height)
+	end
+end
+
 --- Snaps the collapsed/expanded state without animating.
 function Section._applyVisualState(self: Section)
 	local content = self.Content
@@ -5271,7 +5342,7 @@ function Section._applyVisualState(self: Section)
 	content.Visible = not self.Collapsed
 
 	self.Height = panelHeight
-	self.Instance.Size = UDim2.new(1, 0, 0, panelHeight)
+	self:_applySize()
 end
 
 --- Content height = sum of element heights + gaps.
@@ -5310,7 +5381,7 @@ function Section._updateHeight(self: Section)
 	local panelHeight = self:_getPanelHeight()
 
 	self.Height = panelHeight
-	self.Instance.Size = UDim2.new(1, 0, 0, panelHeight)
+	self:_applySize()
 end
 
 function Section._notifyLayoutChanged(self: Section)
@@ -5338,7 +5409,7 @@ function Section._updatePosition(self: Section)
 end
 
 function Section.SetWidth(self: Section, width: number)
-	self.Instance.Size = UDim2.new(0, width, 0, self.Height)
+	self._width = width
 
 	self:_updateHeight()
 end
@@ -6207,51 +6278,53 @@ export type Theme = {
 local Base = {
 	Name = "Midnight",
 	Colors = {
-		Window = Color3.fromRGB(11, 11, 12),
-		WindowBorder = Color3.fromRGB(31, 31, 35),
+		Window = Color3.fromRGB(13, 13, 14),
+		WindowBorder = Color3.fromRGB(32, 32, 35),
 		WindowShadow = Color3.fromRGB(0, 0, 0),
 
 		Header = Color3.fromRGB(13, 13, 14),
 		TabActive = Color3.fromRGB(238, 240, 243),
-		TabInactive = Color3.fromRGB(126, 130, 139),
+		TabInactive = Color3.fromRGB(128, 132, 139),
 		TabHover = Color3.fromRGB(198, 202, 210),
 
 		Sidebar = Color3.fromRGB(13, 13, 14),
-		SidebarGroup = Color3.fromRGB(96, 100, 109),
-		SidebarItem = Color3.fromRGB(168, 172, 181),
+		SidebarGroup = Color3.fromRGB(104, 108, 115),
+		SidebarItem = Color3.fromRGB(186, 190, 197),
 		SidebarItemHover = Color3.fromRGB(22, 22, 25),
 		SidebarItemActive = Color3.fromRGB(24, 24, 28),
 		SidebarItemActiveText = Color3.fromRGB(236, 238, 242),
 
-		Panel = Color3.fromRGB(17, 17, 19),
-		PanelBorder = Color3.fromRGB(30, 30, 34),
-		PanelHeader = Color3.fromRGB(214, 217, 222),
-		PanelDivider = Color3.fromRGB(28, 28, 32),
+		Panel = Color3.fromRGB(23, 23, 25),
+		PanelBorder = Color3.fromRGB(33, 33, 36),
+		PanelHeader = Color3.fromRGB(138, 141, 147),
+		PanelDivider = Color3.fromRGB(32, 32, 35),
 
-		Element = Color3.fromRGB(9, 9, 10),
-		ElementBorder = Color3.fromRGB(28, 28, 32),
-		ElementHover = Color3.fromRGB(14, 14, 16),
-		ElementActive = Color3.fromRGB(19, 19, 22),
+		Element = Color3.fromRGB(42, 43, 46),
+		ElementBorder = Color3.fromRGB(53, 54, 58),
+		ElementHover = Color3.fromRGB(50, 51, 55),
+		ElementActive = Color3.fromRGB(57, 58, 63),
+		ElementDim = Color3.fromRGB(26, 26, 28),
+		ElementDimBorder = Color3.fromRGB(42, 43, 47),
 
 		Text = Color3.fromRGB(232, 234, 238),
 		TextDim = Color3.fromRGB(150, 154, 162),
 		TextMuted = Color3.fromRGB(103, 107, 115),
 		TextDisabled = Color3.fromRGB(84, 88, 96),
 
-		Accent = Color3.fromRGB(147, 168, 195),
-		AccentHover = Color3.fromRGB(172, 191, 214),
-		AccentText = Color3.fromRGB(12, 13, 15),
-		AccentSoft = Color3.fromRGB(38, 45, 55),
+		Accent = Color3.fromRGB(44, 165, 216),
+		AccentHover = Color3.fromRGB(64, 182, 231),
+		AccentText = Color3.fromRGB(255, 255, 255),
+		AccentSoft = Color3.fromRGB(31, 92, 122),
 
-		Track = Color3.fromRGB(36, 36, 40),
-		TrackFill = Color3.fromRGB(147, 168, 195),
-		Knob = Color3.fromRGB(228, 232, 238),
+		Track = Color3.fromRGB(58, 59, 63),
+		TrackFill = Color3.fromRGB(44, 165, 216),
+		Knob = Color3.fromRGB(44, 165, 216),
 
-		ToggleOff = Color3.fromRGB(9, 9, 10),
-		ToggleOffBorder = Color3.fromRGB(38, 38, 43),
-		ToggleOn = Color3.fromRGB(147, 168, 195),
-		ToggleOnBorder = Color3.fromRGB(160, 180, 205),
-		ToggleCheck = Color3.fromRGB(14, 15, 17),
+		ToggleOff = Color3.fromRGB(42, 43, 46),
+		ToggleOffBorder = Color3.fromRGB(58, 59, 63),
+		ToggleOn = Color3.fromRGB(44, 165, 216),
+		ToggleOnBorder = Color3.fromRGB(44, 165, 216),
+		ToggleCheck = Color3.fromRGB(255, 255, 255),
 
 		Popup = Color3.fromRGB(15, 15, 17),
 		PopupBorder = Color3.fromRGB(36, 36, 41),
@@ -6261,14 +6334,14 @@ local Base = {
 		Scrollbar = Color3.fromRGB(44, 44, 49),
 		ScrollbarHover = Color3.fromRGB(66, 66, 73),
 
-		Divider = Color3.fromRGB(25, 25, 29),
+		Divider = Color3.fromRGB(28, 28, 31),
 		Icon = Color3.fromRGB(138, 142, 151),
-		IconActive = Color3.fromRGB(147, 168, 195),
+		IconActive = Color3.fromRGB(44, 165, 216),
 
 		Success = Color3.fromRGB(122, 199, 147),
 		Warning = Color3.fromRGB(226, 181, 100),
 		Danger = Color3.fromRGB(226, 108, 108),
-		Info = Color3.fromRGB(147, 168, 195),
+		Info = Color3.fromRGB(44, 165, 216),
 
 		Tooltip = Color3.fromRGB(22, 22, 25),
 		TooltipBorder = Color3.fromRGB(40, 40, 46),
@@ -7572,16 +7645,10 @@ function Window.new(config: Config): Window
 
 	self.TabBar = tabBar
 
-	local divider = Instance.new("Frame")
 
-	divider.Name = "HeaderDivider"
-	divider.AnchorPoint = Vector2.new(0, 1)
-	divider.BackgroundColor3 = theme.Colors.Divider
-	divider.BorderSizePixel = 0
-	divider.Position = UDim2.new(0, 0, 0, headerHeight)
-	divider.Size = UDim2.new(1, 0, 0, 1)
-	divider.ZIndex = 6
-	divider.Parent = header
+	-- No full-width header rule: on the reference the logo, the tab strip and
+	-- the header buttons sit on one seamless row (only the active tab is
+	-- underlined).
 
 	--// Header buttons (search / settings) ------------------------------------
 	local buttonsRight = 24
@@ -8002,7 +8069,20 @@ function Window._selectTab(self: Window, tab: any)
 	if targetPage ~= nil then
 		self:_selectPage(targetPage)
 	elseif self.ActivePage == nil then
-		self:_getDefaultPageFor(tab)
+		-- A fresh tab has no pages yet. Creating the fallback "Main" page
+		-- immediately would leave a stray sidebar entry even when the user
+		-- adds real pages right after, so wait a frame first.
+		task.defer(function()
+			if tab.Pages ~= nil and #tab.Pages == 0 and not self._destroyed then
+				self:_getDefaultPageFor(tab)
+			elseif self.ActiveTab == tab and self.ActivePage == nil then
+				local first = tab.Pages[1]
+
+				if first ~= nil then
+					self:_selectPage(first)
+				end
+			end
+		end)
 	end
 end
 
@@ -8099,9 +8179,9 @@ function Window._rebuildSidebar(self: Window)
 			groupLabel.BackgroundTransparency = 1
 			groupLabel.LayoutOrder = order
 			groupLabel.Size = UDim2.new(1, -metrics.Padding, 0, metrics.GroupHeight)
-			groupLabel.Text = (page.Group or ""):upper()
+			groupLabel.Text = page.Group or ""
 			groupLabel.TextColor3 = theme.Colors.SidebarGroup
-			groupLabel.TextSize = 10
+			groupLabel.TextSize = 11
 			groupLabel.TextXAlignment = Enum.TextXAlignment.Left
 			groupLabel.TextYAlignment = Enum.TextYAlignment.Bottom
 			groupLabel.ZIndex = 6

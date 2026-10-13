@@ -1710,7 +1710,16 @@ local function installGlobals()
 	end
 
 	function task.delay(delay: number, callback, ...)
-		table.insert(Mock.Deferred, { Time = Mock.Clock + (delay or 0), Callback = callback, Args = { ... } })
+		local token = { __mocktype = "thread", Cancelled = false }
+
+		table.insert(Mock.Deferred, {
+			Time = Mock.Clock + (delay or 0),
+			Callback = callback,
+			Args = { ... },
+			Token = token,
+		})
+
+		return token
 	end
 
 	function task.wait(delay: number?)
@@ -1720,7 +1729,11 @@ local function installGlobals()
 		Mock.pump()
 	end
 
-	function task.cancel() end
+	function task.cancel(token)
+		if type(token) == "table" then
+			token.Cancelled = true
+		end
+	end
 
 	_G.task = task
 
@@ -1935,6 +1948,20 @@ local function installGlobals()
 	services.ContextActionService = newServiceInstance("Folder", "ContextActionService")
 
 	local dataModel = {}
+
+	function dataModel:HttpGet(url: string)
+		local provider = rawget(_G, "__mockHttpGet")
+
+		if provider ~= nil then
+			local ok, result = pcall(provider, url)
+
+			if ok and result ~= nil then
+				return result
+			end
+		end
+
+		error("MockRoblox: HttpGet is not available for " .. tostring(url), 2)
+	end
 
 	function dataModel:GetService(name: string)
 		local service = services[name]

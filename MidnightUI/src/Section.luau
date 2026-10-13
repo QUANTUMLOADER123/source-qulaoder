@@ -38,6 +38,8 @@ export type Options = {
 	Collapsed: boolean?,
 	Description: string?,
 	Collapsible: boolean?,
+	Chevron: boolean?,
+	Divider: boolean?,
 	Order: number?,
 }
 
@@ -87,6 +89,7 @@ function Section.new(page: any, name: string, options: Options?): Section
 	self._animating = false
 	self._elementOrder = 0
 	self._appearOffset = 0
+	self._width = nil
 
 	--// Panel ---------------------------------------------------------
 	local panel = Instance.new("Frame")
@@ -149,29 +152,36 @@ function Section.new(page: any, name: string, options: Options?): Section
 	self.Header = header
 	self.Title = title
 
-	local chevron = Icon.create("chevronDown", {
-		Size = 14,
-		Color = theme.Colors.TextMuted,
-		Parent = header,
-		Position = UDim2.new(1, -(headerPadding + 14), 0, (metrics.Panel.HeaderHeight - 14) / 2),
-		AnchorPoint = Vector2.new(0, 0),
-		Name = "Chevron",
-		ZIndex = 4,
-	})
+	-- Chevron is opt-in: the reference groupbox headers are plain text.
+	local chevron = nil
 
-	chevron.Rotation = self.Collapsed and -90 or 0
+	if opts.Chevron == true then
+		chevron = Icon.create("chevronDown", {
+			Size = 14,
+			Color = theme.Colors.TextMuted,
+			Parent = header,
+			Position = UDim2.new(1, -(headerPadding + 14), 0, (metrics.Panel.HeaderHeight - 14) / 2),
+			AnchorPoint = Vector2.new(0, 0),
+			Name = "Chevron",
+			ZIndex = 4,
+		})
 
-	--// Divider -------------------------------------------------------
-	local divider = Instance.new("Frame")
+		chevron.Rotation = self.Collapsed and -90 or 0
+	end
 
-	divider.Name = "Divider"
-	divider.AnchorPoint = Vector2.new(0.5, 0)
-	divider.BackgroundColor3 = theme.Colors.PanelDivider
-	divider.BorderSizePixel = 0
-	divider.Position = UDim2.new(0.5, 0, 0, metrics.Panel.HeaderHeight - 1)
-	divider.Size = UDim2.new(1, -headerPadding * 2, 0, 1)
-	divider.ZIndex = 3
-	divider.Parent = panel
+	--// Divider (opt-in, the reference header is plain text) -----------
+	if opts.Divider == true then
+		local divider = Instance.new("Frame")
+
+		divider.Name = "Divider"
+		divider.AnchorPoint = Vector2.new(0.5, 0)
+		divider.BackgroundColor3 = theme.Colors.PanelDivider
+		divider.BorderSizePixel = 0
+		divider.Position = UDim2.new(0.5, 0, 0, metrics.Panel.HeaderHeight - 1)
+		divider.Size = UDim2.new(1, -headerPadding * 2, 0, 1)
+		divider.ZIndex = 3
+		divider.Parent = panel
+	end
 
 	--// Content -------------------------------------------------------
 	local content = Instance.new("CanvasGroup")
@@ -239,6 +249,15 @@ function Section.Appear(self: Section, delay: number?, instant: boolean?)
 	})
 end
 
+--- Applies the panel size, preserving an explicitly assigned column width.
+function Section._applySize(self: Section)
+	if self._width ~= nil then
+		self.Instance.Size = UDim2.new(0, self._width, 0, self.Height)
+	else
+		self.Instance.Size = UDim2.new(1, 0, 0, self.Height)
+	end
+end
+
 --- Snaps the collapsed/expanded state without animating.
 function Section._applyVisualState(self: Section)
 	local content = self.Content
@@ -250,7 +269,7 @@ function Section._applyVisualState(self: Section)
 	content.Visible = not self.Collapsed
 
 	self.Height = panelHeight
-	self.Instance.Size = UDim2.new(1, 0, 0, panelHeight)
+	self:_applySize()
 end
 
 --- Content height = sum of element heights + gaps.
@@ -289,7 +308,7 @@ function Section._updateHeight(self: Section)
 	local panelHeight = self:_getPanelHeight()
 
 	self.Height = panelHeight
-	self.Instance.Size = UDim2.new(1, 0, 0, panelHeight)
+	self:_applySize()
 end
 
 function Section._notifyLayoutChanged(self: Section)
@@ -317,7 +336,7 @@ function Section._updatePosition(self: Section)
 end
 
 function Section.SetWidth(self: Section, width: number)
-	self.Instance.Size = UDim2.new(0, width, 0, self.Height)
+	self._width = width
 
 	self:_updateHeight()
 end

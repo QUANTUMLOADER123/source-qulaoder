@@ -1,32 +1,32 @@
 --[[
 	═══════════════════════════════════════════════════════════════════════════
-	  M I D N I G H T   U I   —   демо-меню (loadstring-сборка)
+	  M I D N I G H T   U I   —   демо-меню + все элементы
 	═══════════════════════════════════════════════════════════════════════════
 
-	Вставь это целиком в executor и запусти.
+	Запуск (executor):
+		loadstring(game:HttpGet("<ссылка на этот файл>"))()
 
-	Скрипт сам скачивает библиотеку с GitHub и строит меню со ВСЕМИ
-	элементами: вкладки, сайдбар, группы, чекбоксы, слайдеры, дропдауны,
-	текстовые поля, кнопки, кейбинды, колор-пикеры, уведомления.
-
-	Открыть/закрыть меню: RightControl (или кнопка в меню).
+	Открыть/закрыть меню — RightControl.
+	Внутри — все элементы библиотеки: чекбоксы, круглые чекбоксы, слайдеры,
+	дропдауны, текстовые поля, кнопки, кейбинды, колор-пикеры, лейблы,
+	разделители, уведомления.
 ]]
 
 local BASE = "https://raw.githubusercontent.com/QUANTUMLOADER123/source-qulaoder/arena/7cd2f990-source-qulaoder/MidnightUI/dist/"
 
---// 1. Загрузка библиотеки ------------------------------------------------------------------
+--// 1. Библиотека ------------------------------------------------------------
 
-local loaded, Midnight = pcall(function()
+local ok, Midnight = pcall(function()
 	return loadstring(game:HttpGet(BASE .. "Midnight.luau"))()
 end)
 
-if not loaded or Midnight == nil then
-	warn("[Midnight] не удалось загрузить библиотеку: " .. tostring(Midnight))
+if not ok or Midnight == nil then
+	warn("[Midnight] ошибка загрузки: " .. tostring(Midnight))
 
 	return
 end
 
---// 2. Окно -------------------------------------------------------------------------------
+--// 2. Окно -----------------------------------------------------------------
 
 local window = Midnight:CreateWindow({
 	Title = "Midnight",
@@ -36,165 +36,156 @@ local window = Midnight:CreateWindow({
 	Columns = 2,
 })
 
---// 3. Вкладки -----------------------------------------------------------------------------
+--// 3. Вкладки ---------------------------------------------------------------
 
-local mainTab = window:Tab("MAIN", { Icon = "home" })
-local featuresTab = window:Tab("FEATURES", { Icon = "box" })
-local appearanceTab = window:Tab("APPEARANCE", { Icon = "palette" })
-local skinTab = window:Tab("SKIN", { Icon = "skin" })
-local activityTab = window:Tab("ACTIVITY", { Icon = "activity" })
+local globalsTab = window:Tab("GLOBALS")
+local weaponsTab = window:Tab("WEAPONS")
 
---// 4. MAIN ---------------------------------------------------------------------------------
+--// 4. GLOBALS ▸ Combat ▸ Aimbot ---------------------------------------------
 
-local selfPage = mainTab:Page("Self", { Group = "Main", Icon = "user" })
-local worldPage = mainTab:Page("World", { Group = "World", Icon = "globe" })
-local onlinePage = mainTab:Page("Online", { Group = "Online", Icon = "network" })
-local visualsPage = mainTab:Page("Visuals", { Group = "Visuals", Icon = "eye" })
-local miscPage = mainTab:Page("Misc", { Group = "Misc", Icon = "misc" })
+local aimbot = globalsTab:Page("Aimbot", { Group = "Combat", Icon = "crosshair" })
 
-local radar = selfPage:Groupbox("Off The Radar")
-radar:Toggle({ Title = "Enable", Default = false, Flag = "radar_enabled", Callback = function() end })
-radar:Slider({ Title = "Time", Min = 0, Max = 1000, Default = 0, Suffix = "s", Flag = "radar_time" })
-radar:Dropdown({ Title = "Method", Options = { "Local", "Server", "Hybrid" }, Default = "Local", Flag = "radar_method" })
-radar:Textbox({ Title = "Nickname", Placeholder = "Lester", Flag = "radar_nick" })
+local weapon = aimbot:Groupbox("Weapon")
 
-local health = selfPage:Groupbox("Auto Health Refill")
-health:Toggle({ Title = "Enable", Default = false, Flag = "health_enabled" })
-health:Slider({ Title = "Delay", Min = 0, Max = 10, Step = 0.1, Default = 2.3, Decimals = 1, Flag = "health_delay" })
-health:Textbox({ Title = "Amount", Numeric = true, Min = 0, Max = 100, Default = 100, Flag = "health_amount" })
-health:Dropdown({ Title = "Source", Options = { "Medkit", "Snacks", "Auto" }, Default = "Auto", Flag = "health_source" })
+weapon:Dropdown({ Options = { "AWP", "AK-47", "M4A1", "Karambit" }, Default = "AWP", Flag = "weapon" })
 
-local armour = selfPage:Groupbox("Auto Armour Refill")
-armour:Toggle({ Title = "Enable", Default = false, Flag = "armour_enabled" })
-armour:Slider({ Title = "Delay", Min = 0, Max = 10, Step = 0.1, Default = 1.2, Decimals = 1, Flag = "armour_delay" })
-armour:Textbox({ Title = "Amount", Numeric = true, Min = 0, Max = 100, Default = 100, Flag = "armour_amount" })
+local aim = aimbot:Groupbox("Aimbot")
 
-local wanted = selfPage:Groupbox("Wanted Level")
-wanted:Toggle({ Title = "Freeze", Default = false, Flag = "wanted_freeze" })
-wanted:Dropdown({ Title = "Level", Options = { "none", "1 star", "2 stars", "5 stars" }, Default = "none", Flag = "wanted_level" })
-wanted:Slider({ Title = "Decay", Min = 0, Max = 5, Step = 0.1, Default = 0, Decimals = 1, Flag = "wanted_decay" })
+aim:Toggle({ Title = "Enable", Flag = "aim_enabled" })
+aim:Dropdown({ Title = "Hitboxes", Options = { "Head", "Chest", "Stomach" }, Multi = true, Default = { "Head", "Chest", "Stomach" }, Flag = "aim_hitboxes" })
+aim:Dropdown({ Title = "Ignore jump", Options = { "Yes", "No" }, Placeholder = "", Flag = "aim_ignore_jump" })
+aim:Dropdown({ Title = "Fov type", Options = { "Dynamic", "Static" }, Default = "Dynamic", Dim = true, Flag = "aim_fov_type" })
+aim:Dropdown({ Title = "Smooth type", Options = { "Decrease", "Increase" }, Default = "Decrease", Dim = true, Flag = "aim_smooth_type" })
+aim:Slider({ Title = "Auto-fire hitchance", Min = 0, Max = 100, Default = 0, Flag = "aim_hitchance" })
 
-local noclip = worldPage:Groupbox("Noclip")
-noclip:Toggle({ Title = "Enable", Default = false, Flag = "noclip", Callback = function() end })
-noclip:Keybind({ Title = "Hotkey", Default = "E", Flag = "noclip_key" })
+local settings = aimbot:Groupbox("Settings")
 
-local speed = worldPage:Groupbox("Speedhack")
-speed:Toggle({ Title = "Enable", Default = false, Flag = "speed_enabled" })
-speed:Slider({ Title = "Multiplier", Min = 1, Max = 20, Step = 0.1, Default = 2.5, Decimals = 1, Flag = "speed_mul" })
-speed:Keybind({ Title = "Hold", Default = "LeftShift", Mode = "Hold", Flag = "speed_key" })
+settings:Slider({ Title = "FOV", Min = 0, Max = 10, Step = 0.1, Decimals = 1, Default = 2.3, Flag = "fov" })
+settings:Toggle({ Title = "Draw FOV", Circle = true, Flag = "draw_fov" })
+settings:Keybind({ Title = "Toggle key", Default = "MouseButton2", Flag = "aim_key" })
 
-local teleport = worldPage:Groupbox("Teleport")
-teleport:Textbox({ Title = "Target", Placeholder = "Local", Flag = "tp_target" })
-teleport:Textbox({ Title = "Ground Z", Placeholder = "0.000", Flag = "tp_z" })
-teleport:Dropdown({ Title = "Mode", Options = { "Instant", "Smooth" }, Default = "Smooth", Flag = "tp_mode" })
-teleport:Button({ Title = "Teleport", Style = "Accent", Flag = "tp_go", Callback = function()
-	window:Notify({ Title = "Teleport", Text = "Выполнено", Kind = "Success", Duration = 3 })
-end })
+local trigger = aimbot:Groupbox("Triggerbot")
 
-local players = onlinePage:Groupbox("Players")
-players:Toggle({ Title = "Show list", Default = true, Flag = "players_show" })
-players:Dropdown({ Title = "Sort", Options = { "Distance", "Name", "Team" }, Default = "Distance", Flag = "players_sort" })
-players:Slider({ Title = "Range", Min = 0, Max = 500, Default = 150, Suffix = "m", Flag = "players_range" })
+trigger:Toggle({ Title = "Enable", Flag = "trigger_enabled" })
+trigger:Dropdown({ Title = "Hitboxes", Options = { "Head", "Chest", "Stomach" }, Multi = true, Default = { "Head", "Chest", "Stomach" }, Flag = "trigger_hitboxes" })
+trigger:Dropdown({ Title = "Type", Options = { "Normal", "Rage", "Legit" }, Default = "Normal", Flag = "trigger_type" })
+trigger:Toggle({ Title = "Only zoom", Circle = true, Flag = "trigger_only_zoom" })
+trigger:Slider({ Title = "Hitchance", Min = 0, Max = 100, Default = 73, Flag = "trigger_hitchance" })
+trigger:Slider({ Title = "Delay before shot", Min = 0, Max = 1, Step = 0.001, Decimals = 3, Default = 0, Flag = "trigger_delay_before" })
+trigger:Slider({ Title = "Delay after shot", Min = 0, Max = 1, Step = 0.001, Decimals = 3, Default = 0, Flag = "trigger_delay_after" })
+trigger:Toggle({ Title = "Auto wall", Circle = true, Flag = "trigger_auto_wall" })
+trigger:Slider({ Title = "Min damage", Min = 0, Max = 100, Default = 100, Flag = "trigger_min_damage" })
 
-local esp = visualsPage:Groupbox("Player ESP")
-esp:Toggle({ Title = "Enable", Default = false, Flag = "esp_enabled" })
-esp:Toggle({ Title = "Boxes", Default = true, Flag = "esp_boxes" })
-esp:Toggle({ Title = "Names", Default = true, Flag = "esp_names" })
-esp:ColorPicker({ Title = "Colour", Default = Color3.fromRGB(30, 155, 215), Flag = "esp_color" })
-esp:Slider({ Title = "Opacity", Min = 0, Max = 1, Step = 0.05, Default = 0.85, Decimals = 2, Flag = "esp_opacity" })
+local delays = aimbot:Groupbox("Delays")
 
-local worldVis = visualsPage:Groupbox("World")
-worldVis:Toggle({ Title = "Fullbright", Default = false, Flag = "fullbright" })
-worldVis:Toggle({ Title = "No fog", Default = false, Flag = "no_fog" })
-worldVis:Slider({ Title = "Ambient", Min = 0, Max = 100, Default = 50, Flag = "ambient" })
+delays:Slider({ Title = "Chams delay", Min = 0, Max = 1000, Default = 250, Suffix = "ms", Flag = "chams_delay" })
+delays:Slider({ Title = "ESP delay", Min = 0, Max = 1000, Default = 100, Suffix = "ms", Flag = "esp_delay" })
 
-local misc = miscPage:Groupbox("Misc")
-misc:Label({ Text = "Все элементы меню" })
-misc:Divider({})
-misc:Dropdown({ Title = "Theme", Options = { "Midnight", "Carbon", "Amethyst", "Emerald", "Daybreak" }, Default = "Midnight", Flag = "theme_pick", Callback = function(value)
+--// 5. GLOBALS ▸ Visuals / Misc ----------------------------------------------
+
+local players = globalsTab:Page("Players", { Group = "Visuals", Icon = "users" })
+
+local playerEsp = players:Groupbox("Player ESP")
+
+playerEsp:Toggle({ Title = "Enable", Flag = "esp_enabled" })
+playerEsp:Toggle({ Title = "Boxes", Default = true, Flag = "esp_boxes" })
+playerEsp:Toggle({ Title = "Names", Default = true, Flag = "esp_names" })
+playerEsp:ColorPicker({ Title = "Colour", Default = Color3.fromRGB(44, 165, 216), Flag = "esp_color" })
+playerEsp:Slider({ Title = "Opacity", Min = 0, Max = 1, Step = 0.05, Decimals = 2, Default = 0.85, Flag = "esp_opacity" })
+
+local items = globalsTab:Page("Items", { Group = "Visuals", Icon = "cube" })
+
+local itemEsp = items:Groupbox("Items")
+
+itemEsp:Toggle({ Title = "Enable", Flag = "item_esp" })
+itemEsp:Slider({ Title = "Range", Min = 0, Max = 500, Default = 150, Suffix = "m", Flag = "item_range" })
+itemEsp:Label({ Text = "Подсветка предметов вокруг игрока" })
+itemEsp:Divider({})
+
+local view = globalsTab:Page("View", { Group = "Visuals", Icon = "eye" })
+
+local viewBox = view:Groupbox("View")
+
+viewBox:Toggle({ Title = "Fullbright", Flag = "fullbright" })
+viewBox:Slider({ Title = "Ambient", Min = 0, Max = 100, Default = 50, Flag = "ambient" })
+viewBox:Dropdown({ Title = "Preset", Options = { "None", "Warm", "Cold" }, Default = "None", Flag = "view_preset" })
+
+local hud = globalsTab:Page("Hud", { Group = "Visuals", Icon = "layout" })
+
+local hudBox = hud:Groupbox("HUD")
+
+hudBox:Toggle({ Title = "Watermark", Default = true, Flag = "watermark" })
+hudBox:Textbox({ Title = "Text", Default = "midnight", Flag = "watermark_text" })
+
+local main = globalsTab:Page("Main", { Group = "Misc", Icon = "settings" })
+
+local mainBox = main:Groupbox("Menu")
+
+mainBox:Dropdown({ Title = "Theme", Options = { "Midnight", "Carbon", "Amethyst", "Emerald", "Daybreak" }, Default = "Midnight", Flag = "theme", Callback = function(value)
 	window:SetTheme(value)
 end })
-misc:Gap(6)
-misc:Button({ Title = "Save config", Style = "Default", Callback = function()
-	local saved = window:SaveConfig()
-
-	window:Notify({ Title = "Config", Text = ("сохранено флагов: %d"):format(#saved), Kind = "Info" })
+mainBox:Slider({ Title = "Scale", Min = 0.75, Max = 1.5, Step = 0.05, Decimals = 2, Default = 1, Flag = "scale", Callback = function(value)
+	window:SetScale(value)
 end })
-misc:Button({ Title = "Reset all", Style = "Danger", Callback = function()
+mainBox:Keybind({ Title = "Menu key", Default = "RightControl", Flag = "menu_key", Callback = function(value)
+	window:SetKeybind(value)
+end })
+
+local cloud = globalsTab:Page("Cloud", { Group = "Misc", Icon = "cloud" })
+
+local cloudBox = cloud:Groupbox("Configs")
+
+cloudBox:Textbox({ Title = "Config name", Default = "default", Flag = "config_name" })
+cloudBox:Button({ Title = "Save config", Style = "Accent", Callback = function()
+	window:Notify({ Title = "Config", Text = "Сохранено", Kind = "Success" })
+end })
+cloudBox:Button({ Title = "Reset all", Style = "Danger", Callback = function()
 	for _, element in window:GetElements() do
 		element:Reset()
 	end
 
-	window:Notify({ Title = "Config", Text = "всё сброшено", Kind = "Warning" })
+	window:Notify({ Title = "Config", Text = "Сброшено", Kind = "Warning" })
 end })
 
---// 5. FEATURES ------------------------------------------------------------------------------
+--// 6. WEAPONS ---------------------------------------------------------------
 
-local combatPage = featuresTab:Page("Weapons", { Group = "Combat", Icon = "gun" })
-local visualsFeature = featuresTab:Page("Visuals", { Group = "Visuals", Icon = "eye" })
-local miscFeature = featuresTab:Page("Misc", { Group = "Misc", Icon = "misc" })
+local weaponPage = weaponsTab:Page("Weapon", { Group = "Weapons", Icon = "gun" })
 
-local trigger = combatPage:Groupbox("Triggerbot")
-trigger:Toggle({ Title = "Enable", Default = false, Flag = "trigger_enabled" })
-trigger:Keybind({ Title = "Key", Default = "MouseButton2", Flag = "trigger_key" })
-trigger:Slider({ Title = "Delay", Min = 0, Max = 500, Default = 100, Suffix = "ms", Flag = "trigger_delay" })
-trigger:Dropdown({ Title = "Hitbox", Options = { "Head", "Body", "Nearest" }, Default = "Head", Flag = "trigger_hitbox" })
+local skinBox = weaponPage:Groupbox("Skins")
 
-local aim = combatPage:Groupbox("Aimbot")
-aim:Toggle({ Title = "Enable", Default = false, Flag = "aim_enabled" })
-aim:Slider({ Title = "FOV", Min = 1, Max = 180, Default = 45, Flag = "aim_fov" })
-aim:Slider({ Title = "Smoothness", Min = 0, Max = 10, Step = 0.1, Default = 2.3, Decimals = 1, Flag = "aim_smooth" })
-aim:Dropdown({ Title = "Bone", Options = { "Head", "Neck", "Chest" }, Default = "Neck", Flag = "aim_bone" })
-aim:ColorPicker({ Title = "FOV circle", Default = Color3.fromRGB(44, 165, 216), Flag = "aim_fov_color" })
+skinBox:Dropdown({ Title = "Skin", Options = { "Default", "Gold", "Blood" }, Default = "Default", Flag = "skin" })
+skinBox:Slider({ Title = "Wear", Min = 0, Max = 1, Step = 0.01, Decimals = 2, Default = 0, Flag = "wear" })
+skinBox:ColorPicker({ Title = "Tint", Default = Color3.fromRGB(44, 165, 216), Flag = "tint" })
 
-local delays = visualsFeature:Groupbox("Delays")
-delays:Slider({ Title = "Chams delay", Min = 0, Max = 1000, Default = 250, Suffix = "ms", Flag = "chams_delay" })
-delays:Slider({ Title = "ESP delay", Min = 0, Max = 1000, Default = 100, Suffix = "ms", Flag = "esp_delay" })
-delays:Textbox({ Title = "Notes", Placeholder = "нет", Flag = "delay_notes" })
+local ammoBox = weaponPage:Groupbox("Ammo")
 
-local extras = miscFeature:Groupbox("Extras")
-extras:Toggle({ Title = "Anti-AFK", Default = true, Flag = "antiafk" })
-extras:Toggle({ Title = "Auto reconnect", Default = false, Flag = "reconnect" })
-extras:Dropdown({ Title = "Priority", Options = { "Low", "Normal", "High" }, Default = "Normal", Flag = "priority" })
-extras:Keybind({ Title = "Panic", Default = "Delete", Flag = "panic" })
+ammoBox:Toggle({ Title = "Infinite ammo", Flag = "infinite_ammo" })
+ammoBox:Toggle({ Title = "No reload", Flag = "no_reload" })
+ammoBox:Textbox({ Title = "Magazine size", Numeric = true, Min = 1, Max = 999, Default = 30, Flag = "mag_size" })
 
---// 6. APPEARANCE / SKIN / ACTIVITY ------------------------------------------------------------
+local extraBox = weaponPage:Groupbox("Extra")
 
-local themePage = appearanceTab:Page("Theme", { Group = "Main", Icon = "palette" })
-
-local themeBox = themePage:Groupbox("Theme")
-themeBox:Dropdown({ Title = "Preset", Options = { "Midnight", "Carbon", "Amethyst", "Emerald", "Daybreak" }, Default = "Midnight", Flag = "appearance_theme", Callback = function(value)
-	window:SetTheme(value)
-end })
-themeBox:ColorPicker({ Title = "Accent", Default = Color3.fromRGB(30, 155, 215), Flag = "appearance_accent", Callback = function(color)
-	window:SetTheme({ Colors = { Accent = color } })
-end })
-themeBox:Slider({ Title = "Scale", Min = 0.75, Max = 1.5, Step = 0.05, Default = 1, Decimals = 2, Flag = "ui_scale", Callback = function(value)
-	window:SetScale(value)
-end })
-
-local skinPage = skinTab:Page("Skins", { Group = "Main", Icon = "skin" })
-
-local skins = skinPage:Groupbox("Skins")
-skins:Dropdown({ Title = "Skin", Options = { "Default", "Glossy", "Flat" }, Default = "Default", Flag = "skin" })
-skins:Toggle({ Title = "Rounded corners", Default = true, Flag = "skin_round" })
-skins:Slider({ Title = "Opacity", Min = 0.6, Max = 1, Step = 0.05, Default = 0.98, Decimals = 2, Flag = "skin_opacity" })
-
-local logPage = activityTab:Page("Log", { Group = "Main", Icon = "paragraph" })
-
-local logBox = logPage:Groupbox("Activity")
-logBox:Paragraph({ Text = "Здесь видны последние действия. Нажми кнопку ниже, чтобы проверить уведомления.", Height = 34 })
-logBox:Button({ Title = "Test notification", Style = "Accent", Callback = function()
+extraBox:Button({ Title = "Test notification", Style = "Accent", Callback = function()
 	window:Notify({ Title = "Midnight", Text = "Уведомление работает", Kind = "Success", Duration = 3 })
 end })
-logBox:Button({ Title = "Second one", Callback = function()
+extraBox:Button({ Title = "Second one", Callback = function()
 	window:Notify({ Text = "Ещё одно уведомление", Kind = "Info" })
 end })
+extraBox:Gap(4)
 
---// 7. Старт -----------------------------------------------------------------------------
+local triggerPage = weaponsTab:Page("Triggerbot", { Group = "Weapons", Icon = "target" })
 
-window:SelectTab("MAIN")
+local triggerBox = triggerPage:Groupbox("Triggerbot")
 
-window:Notify({ Title = "Midnight", Text = "Меню загружено — RightControl чтобы открыть", Duration = 5 })
+triggerBox:Toggle({ Title = "Enable", Flag = "wt_enabled" })
+triggerBox:Slider({ Title = "Delay", Min = 0, Max = 500, Default = 100, Suffix = "ms", Flag = "wt_delay" })
+triggerBox:Keybind({ Title = "Key", Default = "MouseButton2", Flag = "wt_key" })
+
+--// 7. Старт -----------------------------------------------------------------
+
+window:SelectTab("GLOBALS")
+window:SelectPage("Aimbot")
+
+window:Notify({ Title = "Midnight", Text = "Меню загружено — RightControl", Duration = 5 })
 
 _G.MidnightWindow = window

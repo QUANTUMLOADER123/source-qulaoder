@@ -173,6 +173,7 @@ function Notification.new(window: any, props: Props, layout: (() -> ())?, onClos
 	self.Height = height
 
 	self.Root = root
+	self._closed = false
 	self.Accent = accent
 	self.Title = title
 	self.Text = body
@@ -197,9 +198,11 @@ function Notification.new(window: any, props: Props, layout: (() -> ())?, onClos
 	self._maid:Add(progressTween)
 
 	if self.Duration > 0 then
-		self._maid:Add(task.delay(self.Duration, function()
-			self:Close()
-		end))
+		task.delay(self.Duration, function()
+			if not self._closed then
+				self:Close()
+			end
+		end)
 	end
 
 	--// Click to dismiss -------------------------------------------------------
@@ -222,6 +225,7 @@ function Notification.Close(self: Notification)
 	end
 
 	self.Closing = true
+	self._closed = true
 
 	local theme = self.Theme
 	local metrics = theme.Metrics.Notification

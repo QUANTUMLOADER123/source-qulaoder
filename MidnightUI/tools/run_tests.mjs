@@ -54,6 +54,29 @@ lua.globals.set(
 	})
 );
 
+// make the user-facing demo script runnable end to end: loadstring() and
+// game:HttpGet() are answered from the local build.
+lua.globals.set(
+	'loadstring',
+	lua.createFunction((source) => {
+		return lua.createFunction(() => lua.execute(String(source))[0] ?? null);
+	})
+);
+
+const distFile = path.join(root, 'dist', 'Midnight.luau');
+const demoFile = path.join(root, 'dist', 'MidnightDemo.luau');
+
+lua.globals.set('__mockHttpGet', lua.createFunction((url) => {
+	const target = String(url);
+	if (target.endsWith('MidnightDemo.luau')) return fs.readFileSync(demoFile, 'utf8');
+	if (target.endsWith('Midnight.luau')) return fs.readFileSync(distFile, 'utf8');
+	return null;
+}));
+
+if (fs.existsSync(demoFile)) {
+	lua.globals.set('__demoSource', fs.readFileSync(demoFile, 'utf8'));
+}
+
 let report = null;
 let crashed = null;
 

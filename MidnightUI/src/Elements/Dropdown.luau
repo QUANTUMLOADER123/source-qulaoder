@@ -73,6 +73,7 @@ function Dropdown.new(section: any, props: Props?): any
 	self.Multi = multi
 	self.Search = options.Search == true
 	self.Arrow = options.Arrow == true
+	self.Dim = options.Dim == true
 	self.Placeholder = options.Placeholder or "Select…"
 	self.MaxHeight = options.MaxHeight or popupMetrics.MaxHeight
 	self.Display = options.Display
@@ -235,15 +236,21 @@ function Dropdown.new(section: any, props: Props?): any
 		valueText.TextColor3 = if disabled
 			then theme.Colors.TextDisabled
 			elseif isEmpty then theme.Colors.TextMuted
+			elseif self.Dim == true then theme.Colors.TextDim
 			else theme.Colors.Text
 
-		box.BackgroundColor3 = if disabled
-			then theme.Colors.Element
-			elseif self._open then theme.Colors.ElementActive
-			elseif self._hovering then theme.Colors.ElementHover
-			else theme.Colors.Element
+		local dim = self.Dim == true
+		local baseColor = if dim then theme.Colors.ElementDim else theme.Colors.Element
 
-		boxStroke.Color = if self._open or self._hovering then theme.Colors.Accent else theme.Colors.ElementBorder
+		box.BackgroundColor3 = if disabled
+			then baseColor
+			elseif self._open then theme.Colors.ElementActive
+			elseif self._hovering then (if dim then theme.Colors.ElementDimBorder else theme.Colors.ElementHover)
+			else baseColor
+
+		boxStroke.Color = if self._open or self._hovering
+			then theme.Colors.Accent
+			else (if dim then theme.Colors.ElementDimBorder else theme.Colors.ElementBorder)
 		boxStroke.Transparency = if disabled then 0.5 else 0
 
 		label.TextColor3 = if disabled then theme.Colors.TextDisabled else theme.Colors.Text
