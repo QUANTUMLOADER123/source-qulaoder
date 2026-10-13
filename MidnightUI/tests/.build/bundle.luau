@@ -5331,13 +5331,27 @@ function Section._applySize(self: Section)
 	end
 end
 
+--- Keeps the content frame's height in sync with the elements it holds.
+--- The content clips its children, so a stale height would hide them.
+function Section._syncContentSize(self: Section, targetHeight: number?)
+	local content = self.Content
+	local height = targetHeight or self:_getContentHeight()
+
+	if self.Collapsed then
+		height = 0
+	end
+
+	content.Size = UDim2.new(content.Size.X.Scale, content.Size.X.Offset, 0, height)
+end
+
 --- Snaps the collapsed/expanded state without animating.
 function Section._applyVisualState(self: Section)
 	local content = self.Content
 	local targetHeight = self:_getContentHeight()
 	local panelHeight = self:_getPanelHeight(targetHeight)
 
-	content.Size = UDim2.new(content.Size.X.Scale, content.Size.X.Offset, 0, self.Collapsed and 0 or targetHeight)
+	self:_syncContentSize(targetHeight)
+
 	content.GroupTransparency = self.Collapsed and 1 or 0
 	content.Visible = not self.Collapsed
 
@@ -5378,10 +5392,15 @@ end
 
 --- Recomputes the height and asks the window to re-run the layout.
 function Section._updateHeight(self: Section)
-	local panelHeight = self:_getPanelHeight()
+	local contentHeight = self:_getContentHeight()
+	local panelHeight = self:_getPanelHeight(contentHeight)
 
 	self.Height = panelHeight
 	self:_applySize()
+
+	if not self._animating then
+		self:_syncContentSize(contentHeight)
+	end
 end
 
 function Section._notifyLayoutChanged(self: Section)
@@ -5471,7 +5490,11 @@ function Section.SetCollapsed(self: Section, collapsed: boolean)
 
 	self.Height = panelHeight
 
-	Util.tween(self.Instance, { Size = UDim2.new(1, 0, 0, panelHeight) }, theme, {
+	local panelSize = if self._width ~= nil
+		then UDim2.new(0, self._width, 0, panelHeight)
+		else UDim2.new(1, 0, 0, panelHeight)
+
+	Util.tween(self.Instance, { Size = panelSize }, theme, {
 		Duration = theme.Animation.Normal,
 	})
 
@@ -5480,6 +5503,8 @@ function Section.SetCollapsed(self: Section, collapsed: boolean)
 
 		if collapsed then
 			content.Visible = false
+		else
+			self:_syncContentSize(self:_getContentHeight())
 		end
 
 		if self.Page ~= nil then
@@ -7453,6 +7478,91 @@ end
 
 --// Construction -----------------------------------------------------
 
+--// Gui container resolution --------------------------------------------
+-- The menu belongs on top of everything and should survive respawns, so it
+-- goes into the executor's hidden UI container (gethui) or CoreGui whenever
+-- that is writable; PlayerGui is only the last resort.
+
+local function executorGlobal(name: string): any
+	local direct = rawget(_G, name)
+
+	if direct ~= nil then
+		return direct
+	end
+
+	local getfenvFn = rawget(_G, "getfenv")
+
+	if type(getfenvFn) == "function" then
+		local ok, environment = pcall(getfenvFn, 0)
+
+		if ok and type(environment) == "table" then
+			return rawget(environment, name)
+		end
+	end
+
+	return nil
+end
+
+local function hiddenUiContainer(): Instance?
+	local getHiddenUi = executorGlobal("gethui")
+
+	if type(getHiddenUi) == "function" then
+		local ok, container = pcall(getHiddenUi)
+
+		if ok and typeof(container) == "Instance" then
+			return container
+		end
+	end
+
+	return nil
+end
+
+local function coreGuiContainer(): Instance?
+	local ok, coreGui = pcall(function()
+		return game:GetService("CoreGui")
+	end)
+
+	if not ok or typeof(coreGui) ~= "Instance" then
+		return nil
+	end
+
+	-- CoreGui refuses writes in some contexts; probe it once.
+	local writable = pcall(function()
+		local probe = Instance.new("Folder")
+
+		probe.Name = "MidnightUIProbe"
+		probe.Parent = coreGui
+		probe:Destroy()
+	end)
+
+	if writable then
+		return coreGui
+	end
+
+	return nil
+end
+
+local function playerGuiContainer(): Instance
+	local player = Players.LocalPlayer
+
+	while player == nil do
+		task.wait()
+
+		player = Players.LocalPlayer
+	end
+
+	return player:WaitForChild("PlayerGui")
+end
+
+-- Picks the container for a new window, honouring `config.Parent`.
+local function resolveGuiParent(config: any): Instance
+	if config.Parent ~= nil then
+		return config.Parent
+	end
+
+	return hiddenUiContainer() or coreGuiContainer() or playerGuiContainer()
+end
+
 function Window.new(config: Config): Window
 	config = config or {}
 
@@ -7505,20 +7615,17 @@ function Window.new(config: Config): Window
 
 	self.Size = { Width = width, Height = height }
 
-	--// ScreenGui -------------------------------------------------------
-	local parent = config.Parent
+	--// ScreenGui (gethui / CoreGui by default) ---------------------------
+	local parent = resolveGuiParent(config)
 
-	if parent == nil then
-		local player = Players.LocalPlayer
+	-- Drop leftovers from an earlier run so two menus never fight.
+	pcall(function()
+		local existing = parent:FindFirstChild("MidnightUI")
 
-		while player == nil do
-			task.wait()
-
-			player = Players.LocalPlayer
+		if existing ~= nil then
+			existing:Destroy()
 		end
-
-		parent = player:WaitForChild("PlayerGui")
-	end
+	end)
 
 	local gui = Instance.new("ScreenGui")
 
@@ -7527,7 +7634,15 @@ function Window.new(config: Config): Window
 	gui.IgnoreGuiInset = config.IgnoreGuiInset ~= false
 	gui.ResetOnSpawn = false
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	gui.Parent = parent
+
+	local attached = pcall(function()
+		gui.Parent = parent
+	end)
+
+	if not attached or gui.Parent == nil then
+		-- CoreGui can be read-only inside some games: fall back to PlayerGui.
+		gui.Parent = playerGuiContainer()
+	end
 
 	self.Gui = gui
 
@@ -9270,7 +9385,7 @@ local Window = __req("src/Window")
 
 local Midnight = {}
 
-Midnight.Version = "1.0.0"
+Midnight.Version = "1.2.0"
 
 --// Modules (handy for advanced usage / custom elements) --------------
 Midnight.Signal = Signal
@@ -9404,73 +9519,29 @@ __modules["tests/Debug"] = function()
 local Mock = __req("tests/MockRoblox")
 Mock.install()
 local Midnight = __req("src/init")
-local window = Midnight:CreateWindow({ Parent = Mock.services.Players.LocalPlayer:WaitForChild("PlayerGui"), Size = { 1120, 700 } })
+local window = Midnight:CreateWindow({})
+
+warn("версия: " .. tostring(Midnight.Version))
+warn("гуи лежит в: " .. tostring(window.Gui.Parent and window.Gui.Parent.Name) .. " (класс " .. tostring(window.Gui.Parent and window.Gui.Parent.ClassName) .. ")")
+warn("CoreGui найден: " .. tostring(Mock.services.CoreGui ~= nil) .. ", родитель == CoreGui: " .. tostring(window.Gui.Parent == Mock.services.CoreGui))
+warn("IgnoreGuiInset=" .. tostring(window.Gui.IgnoreGuiInset) .. " ResetOnSpawn=" .. tostring(window.Gui.ResetOnSpawn))
 
 local page = window:Tab("GLOBALS"):Page("Aimbot", { Group = "Combat", Icon = "crosshair" })
-local a = page:Groupbox("Weapon")
-a:Dropdown({ Options = { "AWP", "AK-47" }, Default = "AWP", Flag = "g1" })
-local b = page:Groupbox("Aimbot")
-b:Toggle({ Title = "Enable", Flag = "g2" })
-b:Dropdown({ Title = "Hitboxes", Options = { "Head", "Chest" }, Default = "Head", Flag = "g3" })
-b:Slider({ Title = "Auto-fire hitchance", Min = 0, Max = 100, Flag = "g4" })
-local c = page:Groupbox("Settings")
-c:Slider({ Title = "FOV", Min = 0, Max = 10, Step = 0.1, Default = 2.3, Decimals = 1, Flag = "g5" })
+local box = page:Groupbox("Aimbot")
+local dd = box:Dropdown({ Title = "Hitboxes", Options = { "Head", "Chest" }, Default = "Head" })
+local toggled = box:Toggle({ Title = "Enable" })
+local circle = box:Toggle({ Title = "Only zoom", Circle = true })
+local slider = box:Slider({ Title = "Hitchance", Min = 0, Max = 100, Default = 73 })
 
 Mock.layout()
 
-local sections = {}
-
-for _, s in page.Sections do
-	table.insert(sections, s)
-end
-
-warn("sections: " .. tostring(#sections))
-
-local boxes = {}
-
-for _, s in sections do
-	local l = Mock.computeLayout(s.Instance)
-	table.insert(boxes, { name = s.Name, x = l.AbsolutePosition.X, y = l.AbsolutePosition.Y, w = l.AbsoluteSize.X, h = l.AbsoluteSize.Y })
-	warn(("  %-10s x=%.0f y=%.0f w=%.0f h=%.0f"):format(s.Name, l.AbsolutePosition.X, l.AbsolutePosition.Y, l.AbsoluteSize.X, l.AbsoluteSize.Y))
-end
-
-local overlaps = 0
-
-for i = 1, #boxes do
-	for j = i + 1, #boxes do
-		local a1, b1 = boxes[i], boxes[j]
-		local separated = a1.x + a1.w <= b1.x + 0.5 or b1.x + b1.w <= a1.x + 0.5
-			or a1.y + a1.h <= b1.y + 0.5 or b1.y + b1.h <= a1.y + 0.5
-
-		if not separated then
-			overlaps += 1
-			warn(("OVERLAP %s <-> %s"):format(a1.name, b1.name))
-		end
-	end
-end
-
-warn("panel overlaps: " .. tostring(overlaps))
-
--- элементы внутри панели не должны пересекаться
-for _, s in sections do
-	local items = {}
-
-	for _, e in s:GetElements() do
-		local l = Mock.computeLayout(e.Instance)
-		table.insert(items, { y = l.AbsolutePosition.Y, h = l.AbsoluteSize.Y, title = tostring(e.Title or e.Class) })
-	end
-
-	table.sort(items, function(p1, p2) return p1.y < p2.y end)
-
-	for index = 2, #items do
-		if items[index].y < items[index - 1].y + items[index - 1].h - 0.5 then
-			overlaps += 1
-			warn(("ELEMENT OVERLAP in %s: %s / %s"):format(s.Name, items[index - 1].title, items[index].title))
-		end
-	end
-end
-
-warn("total overlaps: " .. tostring(overlaps))
+warn(("тема: акцент R=%d G=%d B=%d"):format(window.Theme.Colors.Accent.R * 255, window.Theme.Colors.Accent.G * 255, window.Theme.Colors.Accent.B * 255))
+warn(("дропдаун бокс: R=%d G=%d B=%d"):format(dd.Box.BackgroundColor3.R * 255, dd.Box.BackgroundColor3.G * 255, dd.Box.BackgroundColor3.B * 255))
+warn(("заголовок панели: R=%d"):format(box.Title.TextColor3.R * 255))
+warn(("кружок: dim=%s"):format(tostring(circle.Dot ~= nil)))
+warn(("слайдер: knob R=%d G=%d B=%d, fill R=%d"):format(slider.Knob.BackgroundColor3.R * 255, slider.Knob.BackgroundColor3.G * 255, slider.Knob.BackgroundColor3.B * 255, slider.Fill.BackgroundColor3.R * 255))
+warn(("контент панели: h=%.0f, нужно=%.0f"):format(box.Content.Size.Y.Offset, box:_getContentHeight()))
+warn(("панель: h=%.0f"):format(box.Instance.Size.Y.Offset))
 return nil
 end
 
@@ -12362,7 +12433,7 @@ if window ~= nil then
 	end
 end
 
---// Проверка раскладки: панели не должны пересекаться ------------------------
+
 if window ~= nil then
 	Mock.layout()
 
@@ -12433,6 +12504,28 @@ if window ~= nil then
 	end
 
 	warn(("проверено панелей: %d, наложений: %d"):format(checked, overlaps))
+end
+
+--// Контент панели обязан вмещать все элементы (иначе ClipsDescendants режет) --
+if window ~= nil then
+	local clipped = 0
+
+	for _, tab in window.Tabs do
+		for _, page in tab.Pages do
+			for _, section in page:GetSections() do
+				local needed = section:_getContentHeight()
+				local actual = section.Content.Size.Y.Offset
+
+				if actual + 0.5 < needed then
+					clipped += 1
+
+					warn(("ОБРЕЗАНО: %s/%s контент %.0f < нужно %.0f"):format(page.Name, section.Name, actual, needed))
+				end
+			end
+		end
+	end
+
+	warn("панелей с обрезанным контентом: " .. tostring(clipped))
 end
 
 return nil

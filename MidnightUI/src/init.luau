@@ -43,7 +43,7 @@ local Window = require(script.Window)
 
 local Midnight = {}
 
-Midnight.Version = "1.0.0"
+Midnight.Version = "1.2.0"
 
 --// Modules (handy for advanced usage / custom elements) --------------
 Midnight.Signal = Signal

@@ -178,6 +178,91 @@ end
 
 --// Construction -----------------------------------------------------
 
+--// Gui container resolution --------------------------------------------
+-- The menu belongs on top of everything and should survive respawns, so it
+-- goes into the executor's hidden UI container (gethui) or CoreGui whenever
+-- that is writable; PlayerGui is only the last resort.
+
+local function executorGlobal(name: string): any
+	local direct = rawget(_G, name)
+
+	if direct ~= nil then
+		return direct
+	end
+
+	local getfenvFn = rawget(_G, "getfenv")
+
+	if type(getfenvFn) == "function" then
+		local ok, environment = pcall(getfenvFn, 0)
+
+		if ok and type(environment) == "table" then
+			return rawget(environment, name)
+		end
+	end
+
+	return nil
+end
+
+local function hiddenUiContainer(): Instance?
+	local getHiddenUi = executorGlobal("gethui")
+
+	if type(getHiddenUi) == "function" then
+		local ok, container = pcall(getHiddenUi)
+
+		if ok and typeof(container) == "Instance" then
+			return container
+		end
+	end
+
+	return nil
+end
+
+local function coreGuiContainer(): Instance?
+	local ok, coreGui = pcall(function()
+		return game:GetService("CoreGui")
+	end)
+
+	if not ok or typeof(coreGui) ~= "Instance" then
+		return nil
+	end
+
+	-- CoreGui refuses writes in some contexts; probe it once.
+	local writable = pcall(function()
+		local probe = Instance.new("Folder")
+
+		probe.Name = "MidnightUIProbe"
+		probe.Parent = coreGui
+		probe:Destroy()
+	end)
+
+	if writable then
+		return coreGui
+	end
+
+	return nil
+end
+
+local function playerGuiContainer(): Instance
+	local player = Players.LocalPlayer
+
+	while player == nil do
+		task.wait()
+
+		player = Players.LocalPlayer
+	end
+
+	return player:WaitForChild("PlayerGui")
+end
+
+-- Picks the container for a new window, honouring `config.Parent`.
+local function resolveGuiParent(config: any): Instance
+	if config.Parent ~= nil then
+		return config.Parent
+	end
+
+	return hiddenUiContainer() or coreGuiContainer() or playerGuiContainer()
+end
+
 function Window.new(config: Config): Window
 	config = config or {}
 
@@ -230,20 +315,17 @@ function Window.new(config: Config): Window
 
 	self.Size = { Width = width, Height = height }
 
-	--// ScreenGui -------------------------------------------------------
-	local parent = config.Parent
+	--// ScreenGui (gethui / CoreGui by default) ---------------------------
+	local parent = resolveGuiParent(config)
 
-	if parent == nil then
-		local player = Players.LocalPlayer
+	-- Drop leftovers from an earlier run so two menus never fight.
+	pcall(function()
+		local existing = parent:FindFirstChild("MidnightUI")
 
-		while player == nil do
-			task.wait()
-
-			player = Players.LocalPlayer
+		if existing ~= nil then
+			existing:Destroy()
 		end
-
-		parent = player:WaitForChild("PlayerGui")
-	end
+	end)
 
 	local gui = Instance.new("ScreenGui")
 
@@ -252,7 +334,15 @@ function Window.new(config: Config): Window
 	gui.IgnoreGuiInset = config.IgnoreGuiInset ~= false
 	gui.ResetOnSpawn = false
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	gui.Parent = parent
+
+	local attached = pcall(function()
+		gui.Parent = parent
+	end)
+
+	if not attached or gui.Parent == nil then
+		-- CoreGui can be read-only inside some games: fall back to PlayerGui.
+		gui.Parent = playerGuiContainer()
+	end
 
 	self.Gui = gui
 

@@ -258,13 +258,27 @@ function Section._applySize(self: Section)
 	end
 end
 
+--- Keeps the content frame's height in sync with the elements it holds.
+--- The content clips its children, so a stale height would hide them.
+function Section._syncContentSize(self: Section, targetHeight: number?)
+	local content = self.Content
+	local height = targetHeight or self:_getContentHeight()
+
+	if self.Collapsed then
+		height = 0
+	end
+
+	content.Size = UDim2.new(content.Size.X.Scale, content.Size.X.Offset, 0, height)
+end
+
 --- Snaps the collapsed/expanded state without animating.
 function Section._applyVisualState(self: Section)
 	local content = self.Content
 	local targetHeight = self:_getContentHeight()
 	local panelHeight = self:_getPanelHeight(targetHeight)
 
-	content.Size = UDim2.new(content.Size.X.Scale, content.Size.X.Offset, 0, self.Collapsed and 0 or targetHeight)
+	self:_syncContentSize(targetHeight)
+
 	content.GroupTransparency = self.Collapsed and 1 or 0
 	content.Visible = not self.Collapsed
 
@@ -305,10 +319,15 @@ end
 
 --- Recomputes the height and asks the window to re-run the layout.
 function Section._updateHeight(self: Section)
-	local panelHeight = self:_getPanelHeight()
+	local contentHeight = self:_getContentHeight()
+	local panelHeight = self:_getPanelHeight(contentHeight)
 
 	self.Height = panelHeight
 	self:_applySize()
+
+	if not self._animating then
+		self:_syncContentSize(contentHeight)
+	end
 end
 
 function Section._notifyLayoutChanged(self: Section)
@@ -398,7 +417,11 @@ function Section.SetCollapsed(self: Section, collapsed: boolean)
 
 	self.Height = panelHeight
 
-	Util.tween(self.Instance, { Size = UDim2.new(1, 0, 0, panelHeight) }, theme, {
+	local panelSize = if self._width ~= nil
+		then UDim2.new(0, self._width, 0, panelHeight)
+		else UDim2.new(1, 0, 0, panelHeight)
+
+	Util.tween(self.Instance, { Size = panelSize }, theme, {
 		Duration = theme.Animation.Normal,
 	})
 
@@ -407,6 +430,8 @@ function Section.SetCollapsed(self: Section, collapsed: boolean)
 
 		if collapsed then
 			content.Visible = false
+		else
+			self:_syncContentSize(self:_getContentHeight())
 		end
 
 		if self.Page ~= nil then

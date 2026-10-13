@@ -5331,13 +5331,27 @@ function Section._applySize(self: Section)
 	end
 end
 
+--- Keeps the content frame's height in sync with the elements it holds.
+--- The content clips its children, so a stale height would hide them.
+function Section._syncContentSize(self: Section, targetHeight: number?)
+	local content = self.Content
+	local height = targetHeight or self:_getContentHeight()
+
+	if self.Collapsed then
+		height = 0
+	end
+
+	content.Size = UDim2.new(content.Size.X.Scale, content.Size.X.Offset, 0, height)
+end
+
 --- Snaps the collapsed/expanded state without animating.
 function Section._applyVisualState(self: Section)
 	local content = self.Content
 	local targetHeight = self:_getContentHeight()
 	local panelHeight = self:_getPanelHeight(targetHeight)
 
-	content.Size = UDim2.new(content.Size.X.Scale, content.Size.X.Offset, 0, self.Collapsed and 0 or targetHeight)
+	self:_syncContentSize(targetHeight)
+
 	content.GroupTransparency = self.Collapsed and 1 or 0
 	content.Visible = not self.Collapsed
 
@@ -5378,10 +5392,15 @@ end
 
 --- Recomputes the height and asks the window to re-run the layout.
 function Section._updateHeight(self: Section)
-	local panelHeight = self:_getPanelHeight()
+	local contentHeight = self:_getContentHeight()
+	local panelHeight = self:_getPanelHeight(contentHeight)
 
 	self.Height = panelHeight
 	self:_applySize()
+
+	if not self._animating then
+		self:_syncContentSize(contentHeight)
+	end
 end
 
 function Section._notifyLayoutChanged(self: Section)
@@ -5471,7 +5490,11 @@ function Section.SetCollapsed(self: Section, collapsed: boolean)
 
 	self.Height = panelHeight
 
-	Util.tween(self.Instance, { Size = UDim2.new(1, 0, 0, panelHeight) }, theme, {
+	local panelSize = if self._width ~= nil
+		then UDim2.new(0, self._width, 0, panelHeight)
+		else UDim2.new(1, 0, 0, panelHeight)
+
+	Util.tween(self.Instance, { Size = panelSize }, theme, {
 		Duration = theme.Animation.Normal,
 	})
 
@@ -5480,6 +5503,8 @@ function Section.SetCollapsed(self: Section, collapsed: boolean)
 
 		if collapsed then
 			content.Visible = false
+		else
+			self:_syncContentSize(self:_getContentHeight())
 		end
 
 		if self.Page ~= nil then
@@ -7453,6 +7478,91 @@ end
 
 --// Construction -----------------------------------------------------
 
+--// Gui container resolution --------------------------------------------
+-- The menu belongs on top of everything and should survive respawns, so it
+-- goes into the executor's hidden UI container (gethui) or CoreGui whenever
+-- that is writable; PlayerGui is only the last resort.
+
+local function executorGlobal(name: string): any
+	local direct = rawget(_G, name)
+
+	if direct ~= nil then
+		return direct
+	end
+
+	local getfenvFn = rawget(_G, "getfenv")
+
+	if type(getfenvFn) == "function" then
+		local ok, environment = pcall(getfenvFn, 0)
+
+		if ok and type(environment) == "table" then
+			return rawget(environment, name)
+		end
+	end
+
+	return nil
+end
+
+local function hiddenUiContainer(): Instance?
+	local getHiddenUi = executorGlobal("gethui")
+
+	if type(getHiddenUi) == "function" then
+		local ok, container = pcall(getHiddenUi)
+
+		if ok and typeof(container) == "Instance" then
+			return container
+		end
+	end
+
+	return nil
+end
+
+local function coreGuiContainer(): Instance?
+	local ok, coreGui = pcall(function()
+		return game:GetService("CoreGui")
+	end)
+
+	if not ok or typeof(coreGui) ~= "Instance" then
+		return nil
+	end
+
+	-- CoreGui refuses writes in some contexts; probe it once.
+	local writable = pcall(function()
+		local probe = Instance.new("Folder")
+
+		probe.Name = "MidnightUIProbe"
+		probe.Parent = coreGui
+		probe:Destroy()
+	end)
+
+	if writable then
+		return coreGui
+	end
+
+	return nil
+end
+
+local function playerGuiContainer(): Instance
+	local player = Players.LocalPlayer
+
+	while player == nil do
+		task.wait()
+
+		player = Players.LocalPlayer
+	end
+
+	return player:WaitForChild("PlayerGui")
+end
+
+-- Picks the container for a new window, honouring `config.Parent`.
+local function resolveGuiParent(config: any): Instance
+	if config.Parent ~= nil then
+		return config.Parent
+	end
+
+	return hiddenUiContainer() or coreGuiContainer() or playerGuiContainer()
+end
+
 function Window.new(config: Config): Window
 	config = config or {}
 
@@ -7505,20 +7615,17 @@ function Window.new(config: Config): Window
 
 	self.Size = { Width = width, Height = height }
 
-	--// ScreenGui -------------------------------------------------------
-	local parent = config.Parent
+	--// ScreenGui (gethui / CoreGui by default) ---------------------------
+	local parent = resolveGuiParent(config)
 
-	if parent == nil then
-		local player = Players.LocalPlayer
+	-- Drop leftovers from an earlier run so two menus never fight.
+	pcall(function()
+		local existing = parent:FindFirstChild("MidnightUI")
 
-		while player == nil do
-			task.wait()
-
-			player = Players.LocalPlayer
+		if existing ~= nil then
+			existing:Destroy()
 		end
-
-		parent = player:WaitForChild("PlayerGui")
-	end
+	end)
 
 	local gui = Instance.new("ScreenGui")
 
@@ -7527,7 +7634,15 @@ function Window.new(config: Config): Window
 	gui.IgnoreGuiInset = config.IgnoreGuiInset ~= false
 	gui.ResetOnSpawn = false
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	gui.Parent = parent
+
+	local attached = pcall(function()
+		gui.Parent = parent
+	end)
+
+	if not attached or gui.Parent == nil then
+		-- CoreGui can be read-only inside some games: fall back to PlayerGui.
+		gui.Parent = playerGuiContainer()
+	end
 
 	self.Gui = gui
 
@@ -9270,7 +9385,7 @@ local Window = __req("src/Window")
 
 local Midnight = {}
 
-Midnight.Version = "1.0.0"
+Midnight.Version = "1.2.0"
 
 --// Modules (handy for advanced usage / custom elements) --------------
 Midnight.Signal = Signal

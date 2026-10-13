@@ -186,6 +186,12 @@ triggerBox:Keybind({ Title = "Key", Default = "MouseButton2", Flag = "wt_key" })
 window:SelectTab("GLOBALS")
 window:SelectPage("Aimbot")
 
-window:Notify({ Title = "Midnight", Text = "Меню загружено — RightControl", Duration = 5 })
+window:Notify({
+	Title = "Midnight " .. tostring(Midnight.Version),
+	Text = "Меню загружено — RightControl",
+	Duration = 5,
+})
+
+print(("[Midnight] версия %s, окно в %s"):format(tostring(Midnight.Version), tostring(window.Gui.Parent and window.Gui.Parent.Name)))
 
 _G.MidnightWindow = window

@@ -44,7 +44,7 @@ if window ~= nil then
 	end
 end
 
---// Проверка раскладки: панели не должны пересекаться ------------------------
+
 if window ~= nil then
 	Mock.layout()
 
@@ -117,4 +117,27 @@ if window ~= nil then
 	warn(("проверено панелей: %d, наложений: %d"):format(checked, overlaps))
 end
 
+--// Контент панели обязан вмещать все элементы (иначе ClipsDescendants режет) --
+if window ~= nil then
+	local clipped = 0
+
+	for _, tab in window.Tabs do
+		for _, page in tab.Pages do
+			for _, section in page:GetSections() do
+				local needed = section:_getContentHeight()
+				local actual = section.Content.Size.Y.Offset
+
+				if actual + 0.5 < needed then
+					clipped += 1
+
+					warn(("ОБРЕЗАНО: %s/%s контент %.0f < нужно %.0f"):format(page.Name, section.Name, actual, needed))
+				end
+			end
+		end
+	end
+
+	warn("панелей с обрезанным контентом: " .. tostring(clipped))
+end
+
 return nil
+
