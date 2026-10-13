@@ -773,11 +773,11 @@ function ColorPicker.new(section: any, props: Props?): any
 	swatch.BackgroundColor3 = self.Value
 	swatch.BorderSizePixel = 0
 	swatch.Position = UDim2.new(1, 0, 0.5, 0)
-	swatch.Size = UDim2.fromOffset(swatchWidth, self.Height)
+	swatch.Size = UDim2.fromOffset(swatchWidth, swatchWidth)
 	swatch.ZIndex = 2
 	swatch.Parent = self.Instance
 
-	Util.addCorner(swatch, metrics.FieldRadius)
+	Util.addCorner(swatch, 4)
 
 	local swatchStroke = Util.addStroke(swatch, theme.Colors.ElementBorder, 1, 0.2)
 
@@ -2301,6 +2301,8 @@ export type Props = {
 	Align: ("Left" | "Center" | "Right")?,
 	Wrapped: boolean?,
 	Bold: boolean?,
+	Indent: number?,
+	Dim: boolean?,
 	Visible: boolean?,
 	Order: number?,
 }
@@ -2327,7 +2329,8 @@ function Label.new(section: any, props: Props?): any
 
 	label.Name = "Text"
 	label.BackgroundTransparency = 1
-	label.Size = UDim2.fromScale(1, 1)
+	label.Position = UDim2.fromOffset(options.Indent or 0, 0)
+	label.Size = UDim2.new(1, -(options.Indent or 0), 1, 0)
 	label.Text = text
 	label.TextColor3 = theme.Colors.TextDim
 	label.TextSize = options.TextSize or metrics.TextSize
@@ -2344,7 +2347,7 @@ function Label.new(section: any, props: Props?): any
 	Util.setFont(label, if options.Bold == true then theme.Fonts.Bold else theme.Fonts.Small)
 
 	self.Label = label
-	self.ColorKey = options.Color or "TextDim"
+	self.ColorKey = options.Color or (if options.Dim == true then "TextMuted" else "TextDim")
 
 	function self.Refresh()
 		local color = theme.Colors[self.ColorKey] or theme.Colors.TextDim
@@ -3103,6 +3106,7 @@ __modules["src/Elements/Toggle"] = function()
 ]]
 
 local Icon = __req("src/Icon")
+local Signal = __req("src/Signal")
 local Util = __req("src/Util")
 
 local Element = __req("src/Element")
@@ -3113,6 +3117,9 @@ Toggle.Name = "Toggle"
 
 export type Props = {
 	Circle: boolean?,
+	Color: Color3?,
+	ColorFlag: string?,
+	OnColorChanged: ((value: Color3) -> ())?,
 	Title: string?,
 	Default: boolean?,
 	Flag: string?,
@@ -3215,12 +3222,32 @@ function Toggle.new(section: any, props: Props?): any
 	--// Label ---------------------------------------------------------
 	local labelOffset = boxSize + metrics.Gap
 
+	--// Optional colour swatch (checkbox + colour rows from the reference) --
+	local swatch = nil
+	local swatchSize = 15
+
+	if options.Color ~= nil then
+		swatch = Instance.new("Frame")
+
+		swatch.Name = "Swatch"
+		swatch.AnchorPoint = Vector2.new(1, 0.5)
+		swatch.BackgroundColor3 = options.Color
+		swatch.BorderSizePixel = 0
+		swatch.Position = UDim2.new(1, 0, 0.5, 0)
+		swatch.Size = UDim2.fromOffset(swatchSize, swatchSize)
+		swatch.ZIndex = 3
+		swatch.Parent = self.Instance
+
+		Util.addCorner(swatch, 4)
+		Util.addStroke(swatch, theme.Colors.ElementBorder, 1, 0.25)
+	end
+
 	local label = Instance.new("TextLabel")
 
 	label.Name = "Label"
 	label.BackgroundTransparency = 1
 	label.Position = UDim2.fromOffset(labelOffset, 0)
-	label.Size = UDim2.new(1, -labelOffset, 1, 0)
+	label.Size = UDim2.new(1, -labelOffset - (swatch ~= nil and (swatchSize + 8) or 0), 1, 0)
 	label.Text = options.Title or ""
 	label.TextColor3 = theme.Colors.Text
 	label.TextSize = metrics.TitleTextSize
@@ -3235,6 +3262,14 @@ function Toggle.new(section: any, props: Props?): any
 	self.Box = box
 	self.Check = check
 	self.Label = label
+	self.Swatch = swatch
+	self.Color = options.Color
+	self._open = false
+	self._popup = nil
+
+	if swatch ~= nil then
+		self.ColorChanged = Signal.new()
+	end
 	self._boxScale = boxScale
 	self._checkScale = checkScale
 	self._hovering = false
@@ -3351,13 +3386,628 @@ function Toggle.new(section: any, props: Props?): any
 		self:SetValue(not self.Value)
 	end)
 
+	--// Colour popup --------------------------------------------------
+	local function commitColor(color: Color3)
+		self.Color = color
+		swatch.BackgroundColor3 = color
+
+		if self.ColorChanged ~= nil then
+			self.ColorChanged:Fire(color)
+		end
+
+		if options.OnColorChanged ~= nil then
+			local ok, err = pcall(options.OnColorChanged, color)
+
+			if not ok then
+				warn(("[MidnightUI] OnColorChanged errored: %s"):format(tostring(err)))
+			end
+		end
+
+		if self.Window ~= nil and options.ColorFlag ~= nil then
+			self.Window:_setFlag(options.ColorFlag, color)
+		end
+	end
+
+	local PALETTE = {
+		Color3.fromRGB(255, 255, 255),
+		Color3.fromRGB(233, 70, 70),
+		Color3.fromRGB(255, 176, 32),
+		Color3.fromRGB(255, 235, 59),
+		Color3.fromRGB(76, 217, 100),
+		Color3.fromRGB(0, 199, 190),
+		Color3.fromRGB(47, 128, 237),
+		Color3.fromRGB(155, 89, 240),
+		Color3.fromRGB(255, 80, 190),
+		Color3.fromRGB(120, 128, 140),
+		Color3.fromRGB(60, 62, 68),
+		Color3.fromRGB(16, 16, 18),
+	}
+
+	if swatch ~= nil then
+		self._maid:Add(swatch.InputBegan:Connect(function(input: InputObject)
+			if self:IsDisabled() then
+				return
+			end
+
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1
+				and input.UserInputType ~= Enum.UserInputType.Touch
+			then
+				return
+			end
+
+			if self._open then
+				if self._popup ~= nil then
+					self._popup:Close()
+				end
+
+				return
+			end
+
+			self._open = true
+
+			local columns = 6
+			local cell = 22
+			local gap = 6
+			local width = columns * cell + (columns - 1) * gap
+
+			self._popup = self.Window:_createPopup({
+				Name = "ColorSwatch",
+				Anchor = swatch,
+				Width = width,
+				Padding = 10,
+				OnClose = function()
+					self._open = false
+					self._popup = nil
+				end,
+				Content = function(parent: Frame): number
+					local grid = Instance.new("Frame")
+
+					grid.Name = "Palette"
+					grid.BackgroundTransparency = 1
+					grid.BorderSizePixel = 0
+					grid.Size = UDim2.new(1, 0, 0, 0)
+					grid.ZIndex = 21
+					grid.Parent = parent
+
+					Util.addList(grid, {
+						Padding = gap,
+						Direction = Enum.FillDirection.Horizontal,
+						SortOrder = Enum.SortOrder.LayoutOrder,
+						Wraps = true,
+					})
+
+					local rows = math.ceil(#PALETTE / columns)
+					local height = rows * cell + (rows - 1) * gap
+
+					grid.Size = UDim2.new(1, 0, 0, height)
+
+					for index, color in PALETTE do
+						local cellButton = Instance.new("TextButton")
+
+						cellButton.Name = "Color" .. tostring(index)
+						cellButton.AutoButtonColor = false
+						cellButton.BackgroundColor3 = color
+						cellButton.BorderSizePixel = 0
+						cellButton.LayoutOrder = index
+						cellButton.Size = UDim2.fromOffset(cell, cell)
+						cellButton.Text = ""
+						cellButton.ZIndex = 22
+						cellButton.Parent = grid
+
+						Util.addCorner(cellButton, 5)
+
+						cellButton.MouseEnter:Connect(function()
+							cellButton.Size = UDim2.fromOffset(cell + 2, cell + 2)
+						end)
+
+						cellButton.MouseLeave:Connect(function()
+							cellButton.Size = UDim2.fromOffset(cell, cell)
+						end)
+
+						cellButton.MouseButton1Click:Connect(function()
+							commitColor(color)
+						end)
+					end
+
+					local hex = Instance.new("TextBox")
+
+					hex.Name = "Hex"
+					hex.BackgroundColor3 = self.Theme.Colors.Element
+					hex.BorderSizePixel = 0
+					hex.ClearTextOnFocus = false
+					hex.Position = UDim2.fromOffset(0, height + 10)
+					hex.Size = UDim2.new(1, 0, 0, 26)
+					hex.Text = Util.colorToHex(self.Color)
+					hex.TextColor3 = self.Theme.Colors.Text
+					hex.TextSize = self.Theme.Metrics.Element.TextSize
+					hex.TextXAlignment = Enum.TextXAlignment.Center
+					hex.ZIndex = 22
+					hex.Parent = parent
+
+					Util.addCorner(hex, 5)
+
+					hex.FocusLost:Connect(function()
+						local parsed = Util.hexToColor(hex.Text)
+
+						if parsed == nil then
+							hex.Text = Util.colorToHex(self.Color)
+
+							return
+						end
+
+						commitColor(parsed)
+					end)
+
+					return height + 10 + 26
+				end,
+			})
+		end))
+	end
+
 	self:AddHover(self.Instance)
 	self:Refresh()
 
 	return self
 end
 
+--- Sets the swatch colour (no-op when the toggle has no swatch).
+function Toggle.SetColor(self: any, color: Color3)
+	if self.Swatch == nil then
+		return
+	end
+
+	self.Color = color
+	self.Swatch.BackgroundColor3 = color
+
+	if self.ColorChanged ~= nil then
+		self.ColorChanged:Fire(color)
+	end
+end
+
+function Toggle.GetColor(self: any): Color3?
+	return self.Color
+end
+
 return Toggle
+end
+
+__modules["src/Hud"] = function()
+--!strict
+--[[
+	MidnightUI · Hud
+	------------------------------------------------------------------
+	The small floating panel from the reference: a rounded dark card with
+	an icon and an uppercase title, sitting in a corner of the screen
+	("SPECTATORS", "BINDS", …). Rows appear under the header as soon as
+	you feed it text, so an empty panel is just the header bar.
+
+		local spectators = window:Hud({ Title = "Spectators", Icon = "eye", Position = "TopLeft" })
+
+		spectators:SetRows({ "Player1", "Player2" })
+		spectators:AddRow("Player3")
+		spectators:Clear()
+]]
+
+local TextService = game:GetService("TextService")
+local UserInputService = game:GetService("UserInputService")
+
+local Icon = __req("src/Icon")
+local Maid = __req("src/Maid")
+local Util = __req("src/Util")
+
+local Hud = {}
+Hud.__index = Hud
+
+export type Props = {
+	Title: string?,
+	Icon: string?,
+	Position: ("TopLeft" | "TopRight" | "BottomLeft" | "BottomRight")?,
+	Rows: { string }?,
+	Visible: boolean?,
+	Offset: Vector2?,
+	Order: number?,
+}
+
+export type Hud = typeof(setmetatable(
+	{} :: {
+		Window: any,
+		Theme: any,
+		Root: Frame,
+		Header: Frame,
+		List: Frame,
+		RowsFrame: Frame,
+		Title: TextLabel,
+		Rows: { string },
+		Visible: boolean,
+		Expanded: boolean,
+		Position: string,
+		_x: number,
+		_y: number,
+		_maid: any,
+		_destroyed: boolean,
+	},
+	Hud
+))
+
+local CORNERS = {
+	TopLeft = Vector2.new(0, 0),
+	TopRight = Vector2.new(1, 0),
+	BottomLeft = Vector2.new(0, 1),
+	BottomRight = Vector2.new(1, 1),
+}
+
+function Hud.new(window: any, props: Props?): Hud
+	local options: Props = props or {}
+	local theme = window.Theme
+	local metrics = theme.Metrics.Hud
+
+	local self: any = setmetatable({}, Hud)
+
+	self.Window = window
+	self.Theme = theme
+	self.Rows = {}
+	self.Visible = options.Visible ~= false
+	self.Expanded = true
+	self.Position = options.Position or "TopLeft"
+	self._destroyed = false
+	self._maid = Maid.new()
+
+	local corner = CORNERS[self.Position] or CORNERS.TopLeft
+	local margin = metrics.Margin
+
+	self._x = margin * (1 - corner.X * 2)
+	self._y = margin * (1 - corner.Y * 2)
+
+	--// Panel ----------------------------------------------------------
+	local root = Instance.new("Frame")
+
+	root.Name = "Hud_" .. (options.Title or "Panel")
+	root.AnchorPoint = corner
+	root.BackgroundColor3 = theme.Colors.Window
+	root.BorderSizePixel = 0
+	root.ClipsDescendants = true
+	root.Size = UDim2.fromOffset(0, metrics.Height)
+	root.ZIndex = 20
+	root.Visible = self.Visible
+	root.Parent = window.Gui
+
+	Util.addCorner(root, metrics.Radius)
+	Util.addStroke(root, theme.Colors.WindowBorder, 1, 0.35)
+
+	self.Root = root
+
+	--// Header ---------------------------------------------------------
+	local header = Instance.new("Frame")
+
+	header.Name = "Header"
+	header.BackgroundTransparency = 1
+	header.BorderSizePixel = 0
+	header.Size = UDim2.new(1, 0, 0, metrics.Height)
+	header.ZIndex = 21
+	header.Parent = root
+
+	self.Header = header
+
+	local iconSize = metrics.IconSize
+
+	local icon = Icon.create(options.Icon or "dot", {
+		Size = iconSize,
+		Color = theme.Colors.Accent,
+		Parent = header,
+		Position = UDim2.fromOffset(metrics.Padding, (metrics.Height - iconSize) / 2),
+		Name = "Icon",
+		ZIndex = 22,
+	})
+
+	local title = Instance.new("TextLabel")
+
+	title.Name = "Title"
+	title.BackgroundTransparency = 1
+	title.Position = UDim2.fromOffset(metrics.Padding + iconSize + metrics.IconGap, 0)
+	title.Size = UDim2.new(1, -(metrics.Padding * 2 + iconSize + metrics.IconGap), 1, 0)
+	title.Text = (options.Title or ""):upper()
+	title.TextColor3 = theme.Colors.Text
+	title.TextSize = metrics.TitleTextSize
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.TextYAlignment = Enum.TextYAlignment.Center
+	title.TextTruncate = Enum.TextTruncate.AtEnd
+	title.ZIndex = 22
+	title.Parent = header
+
+	Util.setFont(title, theme.Fonts.Panel)
+
+	self.Title = title
+	self.Icon = icon
+
+	--// Rows -----------------------------------------------------------
+	local list = Instance.new("Frame")
+
+	list.Name = "List"
+	list.AnchorPoint = Vector2.new(0, 1)
+	list.BackgroundTransparency = 1
+	list.BorderSizePixel = 0
+	list.Position = UDim2.new(0, 0, 1, -metrics.BottomPadding)
+	list.Size = UDim2.new(1, 0, 0, 0)
+	list.ZIndex = 21
+	list.Parent = root
+
+	Util.addList(list, {
+		Padding = metrics.Gap,
+		Direction = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	})
+
+	self.List = list
+
+	--// Dragging -------------------------------------------------------
+	local function startDrag(input: InputObject)
+		local startMouse = Vector2.new(input.Position.X, input.Position.Y)
+		local startX, startY = self._x, self._y
+		local connections = {}
+
+		local function stop()
+			for _, connection in connections do
+				connection:Disconnect()
+			end
+
+			table.clear(connections)
+		end
+
+		table.insert(
+			connections,
+			UserInputService.InputChanged:Connect(function(move: InputObject)
+				if move.UserInputType ~= Enum.UserInputType.MouseMovement
+					and move.UserInputType ~= Enum.UserInputType.Touch
+				then
+					return
+				end
+
+				local dx = move.Position.X - startMouse.X
+				local dy = move.Position.Y - startMouse.Y
+
+				self._x = startX + dx
+				self._y = startY + dy
+
+				self:UpdatePosition()
+			end)
+		)
+
+		table.insert(
+			connections,
+			UserInputService.InputEnded:Connect(function(release: InputObject)
+				if release.UserInputType == Enum.UserInputType.MouseButton1
+					or release.UserInputType == Enum.UserInputType.Touch
+				then
+					stop()
+				end
+			end)
+		)
+
+		self._maid:Add(function()
+			stop()
+		end)
+	end
+
+	self._maid:Add(header.InputBegan:Connect(function(input: InputObject)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch
+		then
+			startDrag(input)
+		end
+	end))
+
+	self:UpdatePosition()
+
+	if options.Rows ~= nil then
+		self:SetRows(options.Rows)
+	else
+		self:_resize()
+	end
+
+	return self :: Hud
+end
+
+--// Geometry ----------------------------------------------------------
+
+--- Places the panel for its anchor corner.
+function Hud.UpdatePosition(self: Hud)
+	local corner = CORNERS[self.Position] or CORNERS.TopLeft
+
+	self.Root.Position = UDim2.fromOffset(self._x, self._y)
+	self.Root.AnchorPoint = corner
+end
+
+--- Measures a single line of text (falls back to an estimate outside Roblox).
+local function measure(text: string, size: number, font: any): number
+	local ok, result = pcall(function()
+		return TextService:GetTextSize(text, size, font, Vector2.new(math.huge, size * 2))
+	end)
+
+	if ok and typeof(result) == "Vector2" then
+		return result.X
+	end
+
+	return #text * size * 0.58
+end
+
+--- Recomputes the panel size from the title and the visible rows.
+function Hud._resize(self: Hud)
+	local metrics = self.Theme.Metrics.Hud
+	local count = self.Expanded and #self.Rows or 0
+	local height = metrics.Height
+
+	if count > 0 then
+		height += metrics.RowHeight * count + metrics.Gap * (count - 1) + metrics.BottomPadding
+	end
+
+	local titleWidth = measure(self.Title.Text, metrics.TitleTextSize, self.Theme.Fonts.Panel)
+	local contentWidth = metrics.Padding * 2 + metrics.IconSize + metrics.IconGap + titleWidth
+	local rowWidth = 0
+
+	for _, row in self.Rows do
+		rowWidth = math.max(rowWidth, measure(row, metrics.RowTextSize, self.Theme.Fonts.Text))
+	end
+
+	contentWidth = math.max(contentWidth, rowWidth + metrics.Padding * 2)
+
+	self.Root.Size = UDim2.fromOffset(math.ceil(contentWidth), height)
+end
+
+--// Content -----------------------------------------------------------
+
+function Hud.SetTitle(self: Hud, title: string, iconName: string?)
+	self.Title.Text = title:upper()
+
+	if iconName ~= nil then
+		Icon.setColor(self.Icon, self.Theme.Colors.Accent)
+	end
+end
+
+--- Replaces every row.
+function Hud.SetRows(self: Hud, rows: { string })
+	Util.clearChildren(self.List)
+
+	table.clear(self.Rows)
+
+	for _, row in rows do
+		table.insert(self.Rows, tostring(row))
+	end
+
+	self:_render()
+
+	return self
+end
+
+function Hud.AddRow(self: Hud, text: string)
+	table.insert(self.Rows, tostring(text))
+
+	self:_render()
+
+	return self
+end
+
+--- Removes a row by index; also accepts the row's text.
+function Hud.RemoveRow(self: Hud, target: (number | string))
+	local index = nil
+
+	if type(target) == "number" then
+		index = target
+	else
+		index = table.find(self.Rows, target)
+	end
+
+	if index == nil or self.Rows[index] == nil then
+		return false
+	end
+
+	table.remove(self.Rows, index)
+
+	self:_render()
+
+	return true
+end
+
+function Hud.Clear(self: Hud)
+	return self:SetRows({})
+end
+
+function Hud._render(self: Hud)
+	local theme = self.Theme
+	local metrics = theme.Metrics.Hud
+
+	Util.clearChildren(self.List)
+
+	if not self.Expanded then
+		self.List.Visible = false
+		self:_resize()
+
+		return
+	end
+
+	self.List.Visible = true
+
+	for index, text in self.Rows do
+		local row = Instance.new("TextLabel")
+
+		row.Name = "Row" .. tostring(index)
+		row.BackgroundTransparency = 1
+		row.LayoutOrder = index
+		row.Size = UDim2.new(1, 0, 0, metrics.RowHeight)
+		row.Text = text
+		row.TextColor3 = theme.Colors.TextDim
+		row.TextSize = metrics.RowTextSize
+		row.TextXAlignment = Enum.TextXAlignment.Left
+		row.TextYAlignment = Enum.TextYAlignment.Center
+		row.TextTruncate = Enum.TextTruncate.AtEnd
+		row.ZIndex = 22
+		row.Parent = self.List
+
+		Util.setFont(row, theme.Fonts.Text)
+	end
+
+	if #self.Rows > 0 then
+		self.List.Size = UDim2.new(1, -metrics.Padding * 2, 0, 0)
+		self.List.Position = UDim2.new(0, metrics.Padding, 1, -metrics.BottomPadding)
+		self.List.AutomaticSize = Enum.AutomaticSize.Y
+	end
+
+	self:_resize()
+end
+
+--// Visibility & lifetime ----------------------------------------------
+
+function Hud.SetVisible(self: Hud, visible: boolean)
+	self.Visible = visible
+	self.Root.Visible = visible
+end
+
+function Hud.IsVisible(self: Hud): boolean
+	return self.Visible
+end
+
+function Hud.SetExpanded(self: Hud, expanded: boolean)
+	self.Expanded = expanded
+	self:_render()
+end
+
+function Hud.IsDestroyed(self: Hud): boolean
+	return self._destroyed
+end
+
+function Hud.SetTheme(self: Hud, theme: any)
+	self.Theme = theme
+
+	self.Root.BackgroundColor3 = theme.Colors.Window
+
+	local stroke = Util.findClass(self.Root, "UIStroke")
+
+	if stroke ~= nil then
+		stroke.Color = theme.Colors.WindowBorder
+	end
+
+	Icon.setColor(self.Icon, theme.Colors.Accent)
+	self.Title.TextColor3 = theme.Colors.Text
+	Util.setFont(self.Title, theme.Fonts.Panel)
+
+	self:_render()
+end
+
+function Hud.Destroy(self: Hud)
+	if self._destroyed then
+		return
+	end
+
+	self._destroyed = true
+
+	self._maid:Clean()
+	self._maid:Destroy()
+
+	if self.Root ~= nil then
+		self.Root:Destroy()
+	end
+end
+
+return Hud
 end
 
 __modules["src/Icon"] = function()
@@ -6276,6 +6926,19 @@ export type Metrics = {
 		Thickness: number,
 		Padding: number,
 	},
+	Hud: {
+		Height: number,
+		Radius: number,
+		Padding: number,
+		Margin: number,
+		IconSize: number,
+		IconGap: number,
+		TitleTextSize: number,
+		RowHeight: number,
+		RowTextSize: number,
+		BottomPadding: number,
+		Gap: number,
+	},
 }
 
 export type Animation = {
@@ -6303,73 +6966,73 @@ export type Theme = {
 local Base = {
 	Name = "Midnight",
 	Colors = {
-		Window = Color3.fromRGB(13, 13, 14),
-		WindowBorder = Color3.fromRGB(32, 32, 35),
+		Window = Color3.fromRGB(23, 23, 26),
+		WindowBorder = Color3.fromRGB(38, 38, 42),
 		WindowShadow = Color3.fromRGB(0, 0, 0),
 
-		Header = Color3.fromRGB(13, 13, 14),
+		Header = Color3.fromRGB(23, 23, 26),
 		TabActive = Color3.fromRGB(238, 240, 243),
 		TabInactive = Color3.fromRGB(128, 132, 139),
 		TabHover = Color3.fromRGB(198, 202, 210),
 
-		Sidebar = Color3.fromRGB(13, 13, 14),
-		SidebarGroup = Color3.fromRGB(104, 108, 115),
-		SidebarItem = Color3.fromRGB(186, 190, 197),
-		SidebarItemHover = Color3.fromRGB(22, 22, 25),
-		SidebarItemActive = Color3.fromRGB(24, 24, 28),
-		SidebarItemActiveText = Color3.fromRGB(236, 238, 242),
+		Sidebar = Color3.fromRGB(23, 23, 26),
+		SidebarGroup = Color3.fromRGB(110, 110, 118),
+		SidebarItem = Color3.fromRGB(186, 186, 193),
+		SidebarItemHover = Color3.fromRGB(34, 34, 38),
+		SidebarItemActive = Color3.fromRGB(42, 42, 46),
+		SidebarItemActiveText = Color3.fromRGB(240, 240, 244),
 
-		Panel = Color3.fromRGB(23, 23, 25),
-		PanelBorder = Color3.fromRGB(33, 33, 36),
-		PanelHeader = Color3.fromRGB(138, 141, 147),
-		PanelDivider = Color3.fromRGB(32, 32, 35),
+		Panel = Color3.fromRGB(28, 28, 31),
+		PanelBorder = Color3.fromRGB(34, 34, 38),
+		PanelHeader = Color3.fromRGB(140, 140, 147),
+		PanelDivider = Color3.fromRGB(36, 36, 40),
 
-		Element = Color3.fromRGB(42, 43, 46),
-		ElementBorder = Color3.fromRGB(53, 54, 58),
-		ElementHover = Color3.fromRGB(50, 51, 55),
-		ElementActive = Color3.fromRGB(57, 58, 63),
-		ElementDim = Color3.fromRGB(26, 26, 28),
-		ElementDimBorder = Color3.fromRGB(42, 43, 47),
+		Element = Color3.fromRGB(38, 38, 42),
+		ElementBorder = Color3.fromRGB(54, 54, 60),
+		ElementHover = Color3.fromRGB(46, 46, 51),
+		ElementActive = Color3.fromRGB(52, 52, 58),
+		ElementDim = Color3.fromRGB(26, 26, 29),
+		ElementDimBorder = Color3.fromRGB(42, 42, 47),
 
-		Text = Color3.fromRGB(232, 234, 238),
-		TextDim = Color3.fromRGB(150, 154, 162),
-		TextMuted = Color3.fromRGB(103, 107, 115),
-		TextDisabled = Color3.fromRGB(84, 88, 96),
+		Text = Color3.fromRGB(233, 233, 238),
+		TextDim = Color3.fromRGB(168, 168, 176),
+		TextMuted = Color3.fromRGB(118, 118, 126),
+		TextDisabled = Color3.fromRGB(92, 92, 99),
 
-		Accent = Color3.fromRGB(44, 165, 216),
-		AccentHover = Color3.fromRGB(64, 182, 231),
+		Accent = Color3.fromRGB(47, 128, 237),
+		AccentHover = Color3.fromRGB(72, 148, 245),
 		AccentText = Color3.fromRGB(255, 255, 255),
-		AccentSoft = Color3.fromRGB(31, 92, 122),
+		AccentSoft = Color3.fromRGB(30, 72, 140),
 
-		Track = Color3.fromRGB(58, 59, 63),
-		TrackFill = Color3.fromRGB(44, 165, 216),
-		Knob = Color3.fromRGB(44, 165, 216),
+		Track = Color3.fromRGB(52, 52, 58),
+		TrackFill = Color3.fromRGB(47, 128, 237),
+		Knob = Color3.fromRGB(240, 241, 245),
 
-		ToggleOff = Color3.fromRGB(42, 43, 46),
-		ToggleOffBorder = Color3.fromRGB(58, 59, 63),
-		ToggleOn = Color3.fromRGB(44, 165, 216),
-		ToggleOnBorder = Color3.fromRGB(44, 165, 216),
+		ToggleOff = Color3.fromRGB(30, 30, 34),
+		ToggleOffBorder = Color3.fromRGB(62, 62, 68),
+		ToggleOn = Color3.fromRGB(47, 128, 237),
+		ToggleOnBorder = Color3.fromRGB(47, 128, 237),
 		ToggleCheck = Color3.fromRGB(255, 255, 255),
 
-		Popup = Color3.fromRGB(15, 15, 17),
-		PopupBorder = Color3.fromRGB(36, 36, 41),
-		PopupHover = Color3.fromRGB(25, 25, 29),
+		Popup = Color3.fromRGB(26, 26, 29),
+		PopupBorder = Color3.fromRGB(42, 42, 47),
+		PopupHover = Color3.fromRGB(38, 38, 42),
 		PopupShadow = Color3.fromRGB(0, 0, 0),
 
-		Scrollbar = Color3.fromRGB(44, 44, 49),
-		ScrollbarHover = Color3.fromRGB(66, 66, 73),
+		Scrollbar = Color3.fromRGB(62, 62, 68),
+		ScrollbarHover = Color3.fromRGB(88, 88, 94),
 
-		Divider = Color3.fromRGB(28, 28, 31),
-		Icon = Color3.fromRGB(138, 142, 151),
-		IconActive = Color3.fromRGB(44, 165, 216),
+		Divider = Color3.fromRGB(36, 36, 40),
+		Icon = Color3.fromRGB(150, 150, 158),
+		IconActive = Color3.fromRGB(47, 128, 237),
 
 		Success = Color3.fromRGB(122, 199, 147),
 		Warning = Color3.fromRGB(226, 181, 100),
 		Danger = Color3.fromRGB(226, 108, 108),
-		Info = Color3.fromRGB(44, 165, 216),
+		Info = Color3.fromRGB(47, 128, 237),
 
-		Tooltip = Color3.fromRGB(22, 22, 25),
-		TooltipBorder = Color3.fromRGB(40, 40, 46),
+		Tooltip = Color3.fromRGB(30, 30, 34),
+		TooltipBorder = Color3.fromRGB(48, 48, 54),
 	} :: Colors,
 
 	Fonts = {
@@ -6419,15 +7082,15 @@ local Base = {
 
 	Metrics = {
 		Window = {
-			Width = 1120,
-			Height = 700,
-			MinWidth = 640,
-			MinHeight = 420,
+			Width = 800,
+			Height = 570,
+			MinWidth = 560,
+			MinHeight = 400,
 			Radius = 12,
 			HeaderHeight = 58,
-			SidebarWidth = 196,
-			Padding = 12,
-			Gap = 12,
+			SidebarWidth = 176,
+			Padding = 16,
+			Gap = 14,
 			ShadowSize = 26,
 			ShadowTransparency = 0.55,
 		},
@@ -6440,48 +7103,48 @@ local Base = {
 		},
 		Sidebar = {
 			Padding = 10,
-			ItemHeight = 30,
-			ItemRadius = 5,
-			ItemGap = 2,
-			GroupHeight = 30,
-			GroupGap = 6,
-			IconSize = 15,
+			ItemHeight = 32,
+			ItemRadius = 6,
+			ItemGap = 0,
+			GroupHeight = 28,
+			GroupGap = 4,
+			IconSize = 16,
 			IconGap = 10,
 			IndicatorWidth = 2,
-			TextSize = 13,
+			TextSize = 15,
 		},
 		Panel = {
 			Radius = 8,
-			HeaderHeight = 40,
-			HeaderTextSize = 13,
-			Padding = 12,
-			TopPadding = 10,
+			HeaderHeight = 26,
+			HeaderTextSize = 15,
+			Padding = 18,
+			TopPadding = 6,
 			BottomPadding = 12,
-			Gap = 10,
-			ColumnGap = 12,
-			RowGap = 12,
+			Gap = 4,
+			ColumnGap = 14,
+			RowGap = 14,
 		},
 		Element = {
-			ToggleHeight = 22,
+			ToggleHeight = 24,
 			ToggleSize = 16,
-			ToggleRadius = 3,
-			SliderHeight = 34,
+			ToggleRadius = 4,
+			SliderHeight = 38,
 			SliderTrackHeight = 4,
-			SliderKnobSize = 12,
-			FieldHeight = 50,
-			FieldBoxHeight = 30,
+			SliderKnobSize = 14,
+			FieldHeight = 46,
+			FieldBoxHeight = 28,
 			FieldRadius = 4,
 			FieldTextSize = 13,
 			FieldPadding = 10,
-			LabelHeight = 20,
-			DividerHeight = 9,
+			LabelHeight = 24,
+			DividerHeight = 10,
 			ButtonHeight = 30,
 			KeybindHeight = 22,
 			KeybindBadge = 20,
-			ColorSwatchHeight = 24,
-			ColorSwatchWidth = 46,
-			TextSize = 13,
-			TitleTextSize = 13,
+			ColorSwatchHeight = 20,
+			ColorSwatchWidth = 15,
+			TextSize = 15,
+			TitleTextSize = 15,
 			Gap = 10,
 			BoxPadding = 8,
 		},
@@ -6513,6 +7176,19 @@ local Base = {
 		Scrollbar = {
 			Thickness = 4,
 			Padding = 2,
+		},
+		Hud = {
+			Height = 38,
+			Radius = 9,
+			Padding = 12,
+			Margin = 12,
+			IconSize = 16,
+			IconGap = 10,
+			TitleTextSize = 14,
+			RowHeight = 20,
+			RowTextSize = 13,
+			BottomPadding = 8,
+			Gap = 4,
 		},
 	} :: Metrics,
 
@@ -7315,6 +7991,7 @@ __modules["src/Window"] = function()
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
+local Hud = __req("src/Hud")
 local Icon = __req("src/Icon")
 local Maid = __req("src/Maid")
 local Notification = __req("src/Notification")
@@ -7575,6 +8252,7 @@ function Window.new(config: Config): Window
 	self.Theme = theme
 	self.Tabs = {}
 	self.Pages = {}
+	self.Huds = {}
 	self.Elements = {}
 	self.Flags = {}
 	self.Notifications = {}
@@ -7715,7 +8393,7 @@ function Window.new(config: Config): Window
 	self.Header = header
 
 	Icon.create(config.Icon or "logo", {
-		Size = 21,
+		Size = 22,
 		Color = theme.Colors.TabActive,
 		Parent = header,
 		Position = UDim2.fromOffset(24, (headerHeight - 21) / 2),
@@ -7727,11 +8405,11 @@ function Window.new(config: Config): Window
 
 	title.Name = "Title"
 	title.BackgroundTransparency = 1
-	title.Position = UDim2.fromOffset(24 + 21 + 11, 0)
+	title.Position = UDim2.fromOffset(24 + 22 + 11, 0)
 	title.Size = UDim2.new(0, 150, 1, 0)
 	title.Text = (config.Title or "Midnight"):upper()
 	title.TextColor3 = theme.Colors.TabActive
-	title.TextSize = 15
+	title.TextSize = 17
 	title.TextXAlignment = Enum.TextXAlignment.Left
 	title.TextYAlignment = Enum.TextYAlignment.Center
 	title.ZIndex = 7
@@ -9283,7 +9961,19 @@ function Window.Tab(self: Window, title: string, options: any?): any
 		self:_selectTab(tab)
 	end
 
+	self:_updateTabBar()
+
 	return tab
+end
+
+--- The tab strip only makes sense with two or more tabs; the reference menu
+--- has a single navigation column, so the bar stays hidden.
+function Window._updateTabBar(self: Window)
+	if self.TabBar == nil then
+		return
+	end
+
+	self.TabBar.Visible = #self.Tabs > 1
 end
 
 --- Aliases.
@@ -9332,6 +10022,24 @@ function Window.SelectPage(self: Window, name: string): any
 end
 
 --- Status of every element, keyed by flag (alias of GetFlags).
+--// Floating HUD panels ---------------------------------------------------
+
+--- Creates a small floating panel (like "SPECTATORS" / "BINDS").
+function Window.Hud(self: Window, props: any): any
+	local hud = Hud.new(self, props)
+
+	table.insert(self.Huds, hud)
+
+	self._maid:AddProxy(hud)
+
+	return hud
+end
+
+--- Every HUD panel created for this window.
+function Window.GetHuds(self: Window): { any }
+	return table.clone(self.Huds)
+end
+
 function Window.GetElements(self: Window): { [string]: any }
 	return self.Elements
 end

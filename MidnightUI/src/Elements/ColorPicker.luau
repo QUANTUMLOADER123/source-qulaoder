@@ -83,11 +83,11 @@ function ColorPicker.new(section: any, props: Props?): any
 	swatch.BackgroundColor3 = self.Value
 	swatch.BorderSizePixel = 0
 	swatch.Position = UDim2.new(1, 0, 0.5, 0)
-	swatch.Size = UDim2.fromOffset(swatchWidth, self.Height)
+	swatch.Size = UDim2.fromOffset(swatchWidth, swatchWidth)
 	swatch.ZIndex = 2
 	swatch.Parent = self.Instance
 
-	Util.addCorner(swatch, metrics.FieldRadius)
+	Util.addCorner(swatch, 4)
 
 	local swatchStroke = Util.addStroke(swatch, theme.Colors.ElementBorder, 1, 0.2)
 

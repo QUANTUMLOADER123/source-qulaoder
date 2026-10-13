@@ -26,6 +26,8 @@ export type Props = {
 	Align: ("Left" | "Center" | "Right")?,
 	Wrapped: boolean?,
 	Bold: boolean?,
+	Indent: number?,
+	Dim: boolean?,
 	Visible: boolean?,
 	Order: number?,
 }
@@ -52,7 +54,8 @@ function Label.new(section: any, props: Props?): any
 
 	label.Name = "Text"
 	label.BackgroundTransparency = 1
-	label.Size = UDim2.fromScale(1, 1)
+	label.Position = UDim2.fromOffset(options.Indent or 0, 0)
+	label.Size = UDim2.new(1, -(options.Indent or 0), 1, 0)
 	label.Text = text
 	label.TextColor3 = theme.Colors.TextDim
 	label.TextSize = options.TextSize or metrics.TextSize
@@ -69,7 +72,7 @@ function Label.new(section: any, props: Props?): any
 	Util.setFont(label, if options.Bold == true then theme.Fonts.Bold else theme.Fonts.Small)
 
 	self.Label = label
-	self.ColorKey = options.Color or "TextDim"
+	self.ColorKey = options.Color or (if options.Dim == true then "TextMuted" else "TextDim")
 
 	function self.Refresh()
 		local color = theme.Colors[self.ColorKey] or theme.Colors.TextDim

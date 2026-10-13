@@ -15,6 +15,7 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
+local Hud = require(script.Parent.Hud)
 local Icon = require(script.Parent.Icon)
 local Maid = require(script.Parent.Maid)
 local Notification = require(script.Parent.Notification)
@@ -275,6 +276,7 @@ function Window.new(config: Config): Window
 	self.Theme = theme
 	self.Tabs = {}
 	self.Pages = {}
+	self.Huds = {}
 	self.Elements = {}
 	self.Flags = {}
 	self.Notifications = {}
@@ -415,7 +417,7 @@ function Window.new(config: Config): Window
 	self.Header = header
 
 	Icon.create(config.Icon or "logo", {
-		Size = 21,
+		Size = 22,
 		Color = theme.Colors.TabActive,
 		Parent = header,
 		Position = UDim2.fromOffset(24, (headerHeight - 21) / 2),
@@ -427,11 +429,11 @@ function Window.new(config: Config): Window
 
 	title.Name = "Title"
 	title.BackgroundTransparency = 1
-	title.Position = UDim2.fromOffset(24 + 21 + 11, 0)
+	title.Position = UDim2.fromOffset(24 + 22 + 11, 0)
 	title.Size = UDim2.new(0, 150, 1, 0)
 	title.Text = (config.Title or "Midnight"):upper()
 	title.TextColor3 = theme.Colors.TabActive
-	title.TextSize = 15
+	title.TextSize = 17
 	title.TextXAlignment = Enum.TextXAlignment.Left
 	title.TextYAlignment = Enum.TextYAlignment.Center
 	title.ZIndex = 7
@@ -1983,7 +1985,19 @@ function Window.Tab(self: Window, title: string, options: any?): any
 		self:_selectTab(tab)
 	end
 
+	self:_updateTabBar()
+
 	return tab
+end
+
+--- The tab strip only makes sense with two or more tabs; the reference menu
+--- has a single navigation column, so the bar stays hidden.
+function Window._updateTabBar(self: Window)
+	if self.TabBar == nil then
+		return
+	end
+
+	self.TabBar.Visible = #self.Tabs > 1
 end
 
 --- Aliases.
@@ -2032,6 +2046,24 @@ function Window.SelectPage(self: Window, name: string): any
 end
 
 --- Status of every element, keyed by flag (alias of GetFlags).
+--// Floating HUD panels ---------------------------------------------------
+
+--- Creates a small floating panel (like "SPECTATORS" / "BINDS").
+function Window.Hud(self: Window, props: any): any
+	local hud = Hud.new(self, props)
+
+	table.insert(self.Huds, hud)
+
+	self._maid:AddProxy(hud)
+
+	return hud
+end
+
+--- Every HUD panel created for this window.
+function Window.GetHuds(self: Window): { any }
+	return table.clone(self.Huds)
+end
+
 function Window.GetElements(self: Window): { [string]: any }
 	return self.Elements
 end
